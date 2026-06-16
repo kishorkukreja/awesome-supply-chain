@@ -101,6 +101,7 @@ Popular Python libraries for supply chain analysis and optimization:
 - **Power BI**: Business intelligence and analytics
 - **Apache Spark**: Big data processing
 - **Apache Kafka**: Real-time data streaming
+- **[Superhighway](https://superhighway.walls.sh/guides/supply-chain-research-agent)**: Python agent guide that researches suppliers, commodity pricing, freight rates, and supply chain disruptions using live web search — generates structured briefs with risk assessments and alternative sourcing recommendations. Pay-per-call, no signup.
 
 ## Implementations
 
