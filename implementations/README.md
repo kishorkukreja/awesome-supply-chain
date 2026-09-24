@@ -16,6 +16,17 @@ Curated collection of open-source implementations, GitHub repositories, and prac
 
 ## General Supply Chain
 
+### fmc-541-check (maximusrufus)
+
+**Description**: Screens US ocean detention & demurrage invoices against 46 CFR part 541 — the 20 required invoice elements (541.6), the 30-day issuance clock (541.7), NVOCC re-billing — with every rule quoted verbatim from the eCFR with retrieval dates; drafts 46 CFR 541.8 mitigation requests. Runs in the browser (nothing uploaded) or from the CLI; optional local OCR for scanned invoices. Not legal advice.
+- **GitHub**: https://github.com/maximusrufus/fmc-541-check
+- **Topics**:
+  - Ocean freight detention & demurrage
+  - Invoice compliance (FMC / OSRA 2022)
+  - Dispute letter drafting
+- **Technologies**: Python (stdlib + pypdf), Pyodide (in-browser), rapidocr (optional)
+- **Hosted**: https://check.trilatic.com
+
 ### supply-chain-optimization (samirsaci)
 
 **Description**: Comprehensive supply chain optimization examples in Python
