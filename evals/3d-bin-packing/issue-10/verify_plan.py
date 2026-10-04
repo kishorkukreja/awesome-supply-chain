@@ -3,12 +3,14 @@
 Usage: python3 verify_plan.py shipment.csv allocation.csv [more allocation.csv ...]
 
 allocation.csv needs columns `po` and `container`. A PO listed more than once
-in different containers counts as split. A container value that is empty or
-not a number (e.g. "none", "unpacked") counts as left out.
+in different containers counts as split. Container values like 2, "C2" or
+"Container 2" are read as container 2. Anything else (e.g. "none",
+"not packable whole") counts as left out.
 """
 import collections
 import csv
 import math
+import re
 import sys
 
 CAP_M3 = 1203.5 * 235.2 * 269.5 / 1e6
@@ -28,7 +30,8 @@ def score(vol, kg, path):
     where = collections.defaultdict(set)
     for r in csv.DictReader(open(path)):
         po, c = r["po"].strip(), str(r["container"]).strip()
-        where[po].add(int(float(c)) if c.replace(".", "", 1).isdigit() else None)
+        m = re.fullmatch(r"(?:c|container)?\s*(\d+)(?:\.0)?", c, re.I)
+        where[po].add(int(m.group(1)) if m else None)
     left_out = sorted(p for p in vol if not where.get(p) or where[p] == {None})
     split = sorted(p for p in vol if len(where.get(p, set()) - {None}) > 1)
     unknown = sorted(set(where) - set(vol))
