@@ -8,7 +8,8 @@ verbatim from skills/3d-bin-packing/SKILL.md, on an anonymized real shipment:
   T1  largest PO alone (62.8 m3, 82% of one container)
   T2  full shipment, every PO must stay whole in one container
   T3  full shipment, PO constraint dropped (easiest case for the skill)
-  T4  lane-based certificate that the largest PO does fit in one container
+  T4  lane-based certificate that the largest PO fits in one container, and its tolerance
+  T5  placement auditor passes the T4 plan and catches four planted faults
 
 Usage: python3 reproduce.py   (stdlib only, ~1 min)
 """
@@ -19,6 +20,7 @@ import math
 import pathlib
 import re
 import signal
+import sys
 import time
 
 HERE = pathlib.Path(__file__).resolve().parent
@@ -154,33 +156,85 @@ def t3():
         print(f"    {name:12s}: {res['num_containers']} containers [{fills(res)}], POs split: {split}/22")
 
 
-def t4(big):
+def lane_plan(big, grow=0.0):
     """Upright stacks in lanes along the container length; lanes sized to carton depth."""
     L, W, H, _ = C
     stacks = []
     for r in ROWS:
         if r["po"] != big:
             continue
-        l, w, h, n = float(r["length_cm"]), float(r["width_cm"]), float(r["height_cm"]), int(r["cartons"])
-        tiers = int(H // h)
-        stacks += [(l, w) for _ in range(math.ceil(n / tiers))]
-    for counts in itertools.product(range(15), repeat=3):
-        widths = [17.0] * counts[0] + [16.5] * counts[1] + [16.0] * counts[2]
+        l, w, h = (float(r[k]) + grow for k in ("length_cm", "width_cm", "height_cm"))
+        n, tiers = int(r["cartons"]), int(H // (float(r["height_cm"]) + grow))
+        stacks += [(l, w, h, min(tiers, n - k * tiers), r["sku"]) for k in range(math.ceil(n / tiers))]
+    kinds = sorted({s[1] for s in stacks}, reverse=True)
+    for counts in itertools.product(range(16), repeat=len(kinds)):
+        widths = [wd for wd, c in zip(kinds, counts) for _ in range(c)]
         if not widths or sum(widths) > W:
             continue
-        lanes = [[wd, L] for wd in widths]
-        for l, w in sorted(stacks, key=lambda s: (-s[1], -s[0])):
-            fit = [ln for ln in lanes if ln[0] >= w and ln[1] >= l]
+        lanes = [{"w": wd, "free": L, "stacks": []} for wd in widths]
+        for st in sorted(stacks, key=lambda s: (-s[1], -s[0])):
+            fit = [ln for ln in lanes if ln["w"] >= st[1] and ln["free"] >= st[0]]
             if not fit:
                 break
-            min(fit, key=lambda ln: (ln[0], ln[1]))[1] -= l
+            ln = min(fit, key=lambda ln: (ln["w"], ln["free"]))
+            ln["stacks"].append(st)
+            ln["free"] -= st[0]
         else:
-            used = max(L - ln[1] for ln in lanes)
-            print(f"\nT4  Certificate: {big} fits whole in ONE container. {len(lanes)} lanes "
-                  f"({sum(widths)} of {W} cm wide), longest lane {used:.0f} of {L} cm, "
-                  f"all cartons upright on uniform floor stacks.")
-            return
-    print(f"\nT4  No lane certificate found for {big}")
+            return lanes
+    return None
+
+
+def placements(big, lanes):
+    out, y = [], 0.0
+    for ln in lanes:
+        x = 0.0
+        for l, w, h, n, sku in ln["stacks"]:
+            out += [{"c": 1, "po": big, "sku": sku, "pos": [x, y, k * h], "size": [l, w, h]} for k in range(n)]
+            x += l
+        y += ln["w"]
+    return out
+
+
+def t4(big):
+    L, W = C[0], C[1]
+    print()
+    for grow_mm in (0, 1, 2, 3):
+        lanes = lane_plan(big, grow_mm / 10)
+        if lanes:
+            used = max(L - ln["free"] for ln in lanes)
+            print(f"T4  {big} with cartons +{grow_mm} mm per dimension: fits whole in ONE container, "
+                  f"{len(lanes)} lanes ({sum(ln['w'] for ln in lanes):.1f} of {W} cm wide), longest lane {used:.0f} of {L} cm")
+        else:
+            print(f"T4  {big} with cartons +{grow_mm} mm per dimension: lane method finds no fit")
+    return placements(big, lane_plan(big))
+
+
+def t5(plan):
+    """The placement auditor must pass a known-good plan and catch each planted fault."""
+    import copy, json, subprocess, tempfile
+    with tempfile.NamedTemporaryFile("w", suffix=".csv", delete=False, newline="") as f:
+        w = csv.DictWriter(f, fieldnames=ROWS[0].keys())
+        w.writeheader()
+        w.writerows(r for r in ROWS if r["po"] == plan[0]["po"])
+    ship = f.name
+
+    def audit(pl):
+        with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as f:
+            json.dump(pl, f)
+        return subprocess.run([sys.executable, str(HERE / "audit_placements.py"), ship, f.name],
+                              capture_output=True, text=True).stdout.strip()
+
+    faults = {
+        "overlapping pairs": lambda p: p[1].update(pos=list(p[0]["pos"])),
+        "this_side_up tipped": lambda p: p[2].update(size=sorted(p[2]["size"])),
+        "count mismatch": lambda p: p.pop(3),
+        "outside container": lambda p: p[4]["pos"].__setitem__(0, C[0] - p[4]["size"][0] + 1),
+    }
+    print(f"\nT5  Placement auditor on the T4 plan: {audit(plan).splitlines()[-1].strip()}")
+    for name, inject in faults.items():
+        bad = copy.deepcopy(plan)
+        inject(bad)
+        print(f"    planted {name}: {'caught' if name in audit(bad) else 'MISSED'}")
 
 
 if __name__ == "__main__":
@@ -192,5 +246,5 @@ if __name__ == "__main__":
     big = t1()
     t2()
     t3()
-    t4(big)
+    t5(t4(big))
     print(f"\n({time.time() - t0:.0f}s)")

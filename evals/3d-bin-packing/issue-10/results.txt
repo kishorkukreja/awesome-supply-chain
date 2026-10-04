@@ -18,6 +18,15 @@ T3  Full shipment, PO constraint dropped
     Layer       : 6 containers [37%, 38%, 58%, 54%, 53%, 20%], POs split: 5/22
     ExtremePoint: 8 containers [62%, 50%, 29%, 32%, 34%, 18%, 21%, 16%], POs split: 15/22
 
-T4  Certificate: P01 fits whole in ONE container. 14 lanes (233.0 of 235.2 cm wide), longest lane 1195 of 1203.5 cm, all cartons upright on uniform floor stacks.
+T4  P01 with cartons +0 mm per dimension: fits whole in ONE container, 14 lanes (233.0 of 235.2 cm wide), longest lane 1195 of 1203.5 cm
+T4  P01 with cartons +1 mm per dimension: fits whole in ONE container, 14 lanes (234.4 of 235.2 cm wide), longest lane 1196 of 1203.5 cm
+T4  P01 with cartons +2 mm per dimension: lane method finds no fit
+T4  P01 with cartons +3 mm per dimension: lane method finds no fit
+
+T5  Placement auditor on the T4 plan: VALID
+    planted overlapping pairs: caught
+    planted this_side_up tipped: caught
+    planted count mismatch: caught
+    planted outside container: caught
 
 (54s)
