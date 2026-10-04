@@ -1,0 +1,19 @@
+agent-runs/opus-1.csv
+  containers: 3 (lower bound 3)  PASS
+  C1 66.5m3 87% 5669kg 7POs | C2 66.5m3 87% 8006kg 4POs | C3 65.9m3 86% 6690kg 11POs
+agent-runs/opus-2.csv
+  containers: 4 (lower bound 3)  FAIL
+  C1 62.8m3 82% 7444kg 1POs | C2 47.1m3 62% 3682kg 6POs | C3 46.2m3 61% 4065kg 7POs | C4 42.7m3 56% 5174kg 8POs
+agent-runs/reference-solver.csv
+  containers: 3 (lower bound 3)  PASS
+  C1 69.8m3 92% 4963kg 9POs | C2 69.7m3 91% 8278kg 5POs | C3 59.3m3 78% 7124kg 8POs
+agent-runs/reported-screenshot.csv
+  containers: 3 (lower bound 3)  FAIL
+  C1 45.3m3 59% 3326kg 6POs | C2 45.4m3 60% 4170kg 7POs | C3 45.2m3 59% 5424kg 8POs
+  left out / 'not packable': ['P01']
+agent-runs/sonnet-1.csv
+  containers: 3 (lower bound 3)  PASS
+  C1 66.0m3 87% 7908kg 4POs | C2 66.4m3 87% 5459kg 7POs | C3 66.4m3 87% 6998kg 11POs
+agent-runs/sonnet-2.csv
+  containers: 4 (lower bound 3)  FAIL
+  C1 62.8m3 82% 7444kg 1POs | C2 46.8m3 61% 6211kg 7POs | C3 46.5m3 61% 2594kg 6POs | C4 42.7m3 56% 4115kg 8POs
