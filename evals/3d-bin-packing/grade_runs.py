@@ -3,7 +3,7 @@
     python3 grade_runs.py runs.json OUT_ITERATION_DIR [--judge judge.json]
 
 runs.json lists runs:
-  [{"label": "R01", "folder": ".../oct-nhava-a", "eval": "original-22po", "config": "with_skill",
+  [{"label": "R01", "folder": ".../oct-nhava-a", "eval": "original-22po", "config": "new_skill",
     "duration_ms": 865559, "tokens": 122805}, ...]
 and evals:
   {"original-22po": {"id": 0, "shipment": "...csv", "best_known": 3, "oversize_po": null, "prompt": "..."}, ...}
@@ -65,8 +65,11 @@ def scripted(ev, vol, kg, where):
                 conts[c].append(p)
     others = [p for p in vol if p != oversize]
     bad_po = sorted(p for p in others if len(where.get(p, set()) - {None}) != 1)
+    # A split PO appears under several containers and allocation.csv cannot say which share went where,
+    # so the capacity check covers only POs assigned to a single container.
+    whole = {p for p in vol if len(where.get(p, set()) - {None}) == 1}
     over = sorted(c for c, ps in conts.items()
-                  if sum(vol[p] for p in ps) > CAP_M3 or sum(kg[p] for p in ps) > CAP_KG)
+                  if sum(vol[p] for p in ps if p in whole) > CAP_M3 or sum(kg[p] for p in ps if p in whole) > CAP_KG)
     out = []
     n, note = len(conts), "containers in allocation.csv"
     if oversize and not where.get(oversize, set()) - {None}:
@@ -79,7 +82,8 @@ def scripted(ev, vol, kg, where):
                 "passed": not bad_po and bool(conts), "evidence": f"split or missing: {bad_po[:6]}" if bad_po else "all whole"})
     out.append({"text": "No container exceeds volume or payload",
                 "passed": not over and bool(conts), "evidence": f"over: {over}" if over else
-                f"max fill {max((sum(vol[p] for p in ps) / CAP_M3 for ps in conts.values()), default=0):.1%}"})
+                f"max fill {max((sum(vol[p] for p in ps if p in whole) / CAP_M3 for ps in conts.values()), default=0):.1%}"
+                + (" (split PO shares not counted)" if len(whole) < len(vol) else "")})
     return out
 
 
@@ -121,7 +125,6 @@ def main():
             "expectations": exps,
             "summary": {"passed": passed, "failed": len(exps) - passed, "total": len(exps),
                         "pass_rate": round(passed / len(exps), 2)},
-            "timing": timing,
             "user_notes_summary": {"uncertainties": [], "needs_review": [], "workarounds": [f"label {run['label']}, model {run.get('model', '?')}"]},
         }, indent=1))
         print(f"{run['label']} {run['eval']:22s} {run['config']:10s} {passed}/{len(exps)}")

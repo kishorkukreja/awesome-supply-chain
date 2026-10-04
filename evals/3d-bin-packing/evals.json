@@ -1,0 +1,32 @@
+{
+ "skill_name": "3d-bin-packing",
+ "evals": [
+  {
+   "id": 0,
+   "name": "original-22po",
+   "prompt": "I'm planning an export shipment out of our warehouse. The order lines are in shipment.csv in that folder (22 POs, about 4,000 cartons). We load into 40' high-cube containers, internal 1203.5 x 235.2 x 269.5 cm, max payload 28,620 kg. Every PO has to ship whole in one container, no splitting. Cartons with this_side_up = 1 must stay upright.\n\nUse the 3D bin packing skill in skills/3d-bin-packing/SKILL.md to work out the load plan. I need to know how many containers to book and which POs go in each. Put the plan in plan.md and the PO to container assignment in allocation.csv with columns po,container. Reply with a short summary of the plan.",
+   "files": [
+    "evals/3d-bin-packing/issue-10/shipment.csv"
+   ],
+   "expected_output": "3 containers, every PO whole, no claim that 3 is impossible, tolerance reported for the tight largest PO"
+  },
+  {
+   "id": 1,
+   "name": "large-49po-8box",
+   "prompt": "I'm planning an export shipment out of our warehouse. The order lines are in shipment.csv in that folder (about 50 POs, about 6,800 cartons). We load into 40' high-cube containers, internal 1203.5 x 235.2 x 269.5 cm, max payload 28,620 kg. Every PO has to ship whole in one container, no splitting. Cartons with this_side_up = 1 must stay upright.\n\nUse the 3D bin packing skill in skills/3d-bin-packing/SKILL.md to work out the load plan. I need to know how many containers to book and which POs go in each. Put the plan in plan.md and the PO to container assignment in allocation.csv with columns po,container. Reply with a short summary of the plan.",
+   "files": [
+    "evals/3d-bin-packing/shipments/large-8box/shipment.csv"
+   ],
+   "expected_output": "8 containers (planted, equals volume bound), every PO whole, any shortfall labelled as a search result"
+  },
+  {
+   "id": 2,
+   "name": "large-po-over-capacity",
+   "prompt": "I'm planning an export shipment out of our warehouse. The order lines are in shipment.csv in that folder (about 50 POs, about 6,800 cartons). We load into 40' high-cube containers, internal 1203.5 x 235.2 x 269.5 cm, max payload 28,620 kg. Every PO has to ship whole in one container, no splitting. Cartons with this_side_up = 1 must stay upright.\n\nUse the 3D bin packing skill in skills/3d-bin-packing/SKILL.md to work out the load plan. I need to know how many containers to book and which POs go in each. Put the plan in plan.md and the PO to container assignment in allocation.csv with columns po,container. Reply with a short summary of the plan.",
+   "files": [
+    "evals/3d-bin-packing/shipments/large-oversize-po/shipment.csv"
+   ],
+   "expected_output": "Flag the 96.2 m3 PO as unable to ship whole with the volume reason, ask before splitting, 8 containers with it split"
+  }
+ ]
+}
