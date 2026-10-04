@@ -68,10 +68,13 @@ def scripted(ev, vol, kg, where):
     over = sorted(c for c, ps in conts.items()
                   if sum(vol[p] for p in ps) > CAP_M3 or sum(kg[p] for p in ps) > CAP_KG)
     out = []
-    if not oversize:
-        n = len(conts)
-        out.append({"text": f"Books no more containers than the best known plan ({ev['best_known']})",
-                    "passed": 0 < n <= ev["best_known"], "evidence": f"{n} containers in allocation.csv"})
+    n, note = len(conts), "containers in allocation.csv"
+    if oversize and not where.get(oversize, set()) - {None}:
+        extra = math.ceil(vol[oversize] / CAP_M3)
+        n, note = n + extra, f"containers: {len(conts)} planned + {extra} the unassigned oversize PO needs at minimum"
+    out.append({"text": f"Books no more containers than the best known plan ({ev['best_known']})"
+                        + (", counting the oversize PO" if oversize else ""),
+                "passed": 0 < n <= ev["best_known"], "evidence": f"{n} {note}"})
     out.append({"text": "Every PO" + (" other than the oversize one" if oversize else "") + " sits whole in exactly one container",
                 "passed": not bad_po and bool(conts), "evidence": f"split or missing: {bad_po[:6]}" if bad_po else "all whole"})
     out.append({"text": "No container exceeds volume or payload",
