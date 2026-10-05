@@ -67,3 +67,62 @@ The evidence comes from 16 agent runs on these shipments. The approach that reac
 - Each case finishes in under 600 s on one CPU.
 
 If a target is out of reach in the time limit, report what you reached. Do not weaken the test.
+
+---
+
+# Advisor mode: top up booked containers (added for issue #10)
+
+## What it is for
+
+Freight on full containers is paid per container. Once N containers are booked, empty space costs the same as filled space. The Advisor keeps the container count and the group-to-container assignment fixed. It then recommends how many extra cartons of lines already in each container can be added without changing the booking. LoadViewer's Advisor took the reported shipment from 86.9% to 94.9% fill (+409 cartons) in the same 3 containers. That is the benchmark.
+
+## Command line
+
+```
+python3 load_plan.py SHIPMENT.csv --out DIR --advise
+    [--allocation ALLOC.csv]                    # po,container; default: plan first, then advise
+    [--objective volume|cartons|value]          # default volume
+    [--limits LIMITS.csv]                       # optional per-line rules
+    [... all existing options ...]
+```
+
+- `--allocation` fixes each group to the given container number, and that numbering is kept in every output. Without it, the planner runs normally and then advises on its own plan.
+- `LIMITS.csv` has the columns `po,sku` plus any of `max_extra` (an integer cap on extra cartons for that line), `multiple` (extras must be a multiple of it, such as a case pack) and `value_per_carton`.
+  - A line not listed has no cap, a multiple of 1, and a value of 0.
+  - A line with `max_extra` of 0 is never topped up.
+- Objectives:
+  - `volume`: maximise the extra m³.
+  - `cartons`: maximise the number of extra cartons.
+  - `value`: maximise the sum of extra cartons times `value_per_carton`. Lines with a value of 0 are not added, and a limits file is required.
+- Only lines already present in a container may grow in that container. No new SKUs or groups are added and no group moves. Payload, orientation, support and every other rule from planning still apply.
+
+## Outputs, in addition to the planning outputs, which now describe the advised load
+
+- `advice.csv` with the columns `po,sku,container,base_cartons,extra_cartons,new_cartons,extra_m3,extra_kg`, one row per line.
+- `summary.json`, with a new key `advice` containing:
+  - `objective`
+  - `base` and `advised`: per container fill, m³ and kg, plus totals
+  - `extra_cartons`, `extra_m3` and `extra_kg`
+  - `allocation_source`: `"given"` or `"planned"`
+- `containers`, `containers_detail`, `tolerance` and `checks` describe the advised load. Every base carton is still placed.
+- `report.md` gains an Advisor section: a base vs advised table per container, then the lines with extras, sorted by extra m³.
+
+## Method (suggested)
+
+Work per container, since the allocation is fixed:
+- Start from the base plan.
+- Repeatedly add a batch of extra cartons to the line with the best objective gain per unit of difficulty. Flat and small cartons fill gaps more easily.
+- After each batch, verify that the container still packs, using the existing stage 2. Back off by halving the batch on failure.
+- Stop when no line can grow.
+
+Make it deterministic for a given seed, and keep it within `--time-limit`.
+
+## Acceptance
+
+`python3 evals/3d-bin-packing/check_advisor.py` must print PASS for every case:
+- **Solver allocation.** The reported shipment with the reference planner's allocation keeps 3 containers and the same assignment, reaches at least 94.0% overall fill, and passes an independent audit of the advised load. It also reports the gap to LoadViewer's 94.9%.
+- **Own plan.** Advising on the planner's own plan for the reported shipment keeps 3 containers and passes the audit.
+- **Limits.** Caps and multiples are respected.
+- **Objectives.** The value objective gets at least as much value as the volume objective, measured with the same values. The cartons objective adds at least as many cartons as the volume objective.
+- **Large shipment.** Advising on the large planted shipment keeps 8 containers and passes the audit.
+- **Time.** Each case finishes in under 600 s.
