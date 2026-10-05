@@ -53,9 +53,34 @@ Check the actual carton positions before giving a container count:
 
 Say which checks ran. A plan that has not been checked is a draft.
 
+### Use the bundled planner for real shipments
+
+For a real carton list (order lines with dimensions, counts and weights), run the bundled planner before writing your own packer:
+
+```
+python3 scripts/load_plan.py shipment.csv --out plan/
+```
+
+It uses only the Python standard library. The input CSV needs these columns: `po, sku, length_cm, width_cm, height_cm, line_weight_kg, cartons, this_side_up`. Rename the user's columns to match. Use `--group-col` if the grouping key is something other than a PO (a customer, a stop). Container defaults are a 40' HC: 1203.5 × 235.2 × 269.5 cm and 28,620 kg. Pass `--length --width --height --payload` for other equipment or the carrier's exact box.
+
+What it does:
+- Computes the lower bound and flags any group that cannot ship whole, with the reason.
+- Assigns groups to containers.
+- Packs each container from single-SKU columns in lanes, with flat cartons riding in the headroom.
+- Re-checks every container with cartons 1, 2 and 3 mm larger.
+- Verifies every carton's position.
+
+Read `plan/report.md` and `plan/summary.json`, and build your answer from them:
+- the container count against the lower bound, and whether it is proven optimal;
+- each container's groups and fill;
+- the tolerance results;
+- any oversize group.
+
+Oversize groups are left unassigned by default. Ask the user before re-running with `--split-oversize`. If the planner uses more containers than the lower bound, say "best found, not proven optimal", and you may try to improve on it. If your own search finds a better plan, verify it to the same standard before you report it.
+
 ### About the code below
 
-The code in this skill teaches the classic algorithms. It does not handle grouping constraints or per-item orientation. The extreme-point and layer sketches can leave boxes floating. Do not take their container count as evidence that a load needs more containers. For real loads, use or write a packer that handles the rules above, then verify its output.
+The code further down teaches the classic algorithms. It does not handle grouping constraints or per-item orientation. The extreme-point and layer sketches can leave boxes floating. Do not take their container count as evidence that a load needs more containers.
 
 ## Initial Assessment
 
