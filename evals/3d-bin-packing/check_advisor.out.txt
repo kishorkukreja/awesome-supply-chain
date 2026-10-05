@@ -1,0 +1,7 @@
+PASS  solver allocation   130s  base 86.9% -> advised 94.6% (LoadViewer 94.9%), +967 cartons
+PASS  own plan             74s  advised 94.0%
+PASS  limits              123s  +252 cartons under caps
+PASS  value objective     127s  value 1592 vs volume objective 1550
+PASS  cartons objective   133s  +1462 cartons vs +967 under volume
+PASS  large own plan      288s  advised 94.1%
+exit=0

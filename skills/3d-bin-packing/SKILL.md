@@ -78,6 +78,20 @@ Read `plan/report.md` and `plan/summary.json`, and build your answer from them:
 
 Oversize groups are left unassigned by default. When there is one, also run the planner with `--split-oversize` into a second folder (`--out plan-split/`). Then report both plans: the count without the oversize group, and the total count with it split. That way the user decides with the real number in front of them, not an estimate. Recommend neither until they approve the split. If the planner uses more containers than the lower bound, say "best found, not proven optimal", and you may try to improve on it. If your own search finds a better plan, verify it to the same standard before you report it.
 
+### Top up booked containers (Advisor)
+
+On full-container freight the booked space is already paid for. After a plan is settled, or when the user asks what else fits, run the Advisor. It keeps the container count and each PO's container fixed, and recommends extra cartons of lines already in each container:
+
+```
+python3 scripts/load_plan.py shipment.csv --out advice/ --advise [--allocation allocation.csv]
+    [--objective volume|cartons|value] [--limits limits.csv]
+```
+
+- Without `--allocation` it plans first, then advises on that plan. Pass `--allocation` (columns `po,container`) to advise on a plan the user already has, for example one from another load planner.
+- `--objective volume` is the default and fills the most cubic metres. `cartons` maximises the number of extra cartons. `value` needs `value_per_carton` in the limits file.
+- `limits.csv` (columns `po,sku`, plus optional `max_extra`, `multiple` and `value_per_carton`) caps each line, respects case packs, and sets the value used by `--objective value`. Ask the user for limits when they matter: open-to-buy, forecast, supplier stock, case packs. Uncapped advice will happily fill a box with one bulky SKU.
+- Report the recommendations from `advice/advice.csv` as suggestions for the buyer or supplier, never as an order. For each line give the PO, the SKU, the extra cartons and the extra m³. Give the base and advised fill per container, the extra weight, and the tolerance of the fuller load, since topped-up containers are tighter.
+
 ### About the code below
 
 The code further down teaches the classic algorithms. It does not handle grouping constraints or per-item orientation. The extreme-point and layer sketches can leave boxes floating. Do not take their container count as evidence that a load needs more containers.
