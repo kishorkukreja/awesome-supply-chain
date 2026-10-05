@@ -1,0 +1,4 @@
+po,sku,length_cm,width_cm,height_cm,line_weight_kg,cartons,this_side_up
+PO-1001,SKU-A,60,40,40,240.0,20,1
+PO-1001,SKU-B,120,15,10,90.0,30,0
+PO-1002,SKU-C,50,50,70,400.0,16,1
