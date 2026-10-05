@@ -16,10 +16,13 @@ each only into a container that already holds another line of that group.
 Writes allocation.csv, placements.csv, summary.json and report.md to DIR.
 
 Advise mode keeps the containers and the group assignment (given, or planned first) and
-recommends extra cartons of lines already in each container. Per container it packs the base
-load several ways (mixed-SKU stacks of one footprint, then single-SKU columns, with leftovers
-placed in the free space), tops each up line by line into the space left above and beside it,
-and keeps the best result for the objective. It also writes advice.csv.
+recommends extra cartons of lines already in each container. Per container it builds candidates and
+keeps the best for the objective: (a) blocks of same-line columns whose shared top carries layers of
+flat cartons, with partial blocks completed by extras of that line, laid on the floor as free
+rectangles, the free floor then filled with whole columns of extras and the rest topped up loose;
+(b) the base packed several ways (mixed-SKU stacks, single-SKU columns), each topped up line by line.
+Tolerance for an advised load builds the winner again the same way with grown cartons and reports
+whether the base still packs and how many recommended extras are kept. It also writes advice.csv.
 Standard library only.
 """
 import argparse
@@ -349,9 +352,10 @@ def fill_rect(rect, remaining, rng, policy, tol, free):
     return lanes
 
 
-def pack_floor(cols, box, rng, policy):
+def pack_floor(cols, box, rng, policy, free=None):
+    """Lanes for the columns. Free floor rectangles left over are appended to `free` when it is given."""
     remaining = sorted(cols, key=lambda c: -c.l * c.w)
-    free = []
+    free = [] if free is None else free
     lanes = fill_rect((0.0, 0.0, box.L, box.W), remaining, rng, policy, policy.tol, free)
     while free and remaining:
         free.sort(key=lambda r: r[2] * r[3])
@@ -877,27 +881,33 @@ def layout_key(placements):
     return hash(tuple(sorted((t.sku, t.po, round(x, 2), round(y, 2), round(z, 2)) for t, x, y, z, *_ in placements)))
 
 
+def base_layout(types, box, seed, mixed, attempt):
+    """One stage-2 layout of the base cartons with leftovers placed loose, or None if a carton is left."""
+    rng = random.Random(seed * 7919 + attempt)
+    plan = pack_one(types, box, policy(attempt, rng, mixed), rng)
+    if plan.unplaced:
+        plan = place_leftovers(plan.placements(), plan.unplaced, box)
+    return None if plan.unplaced else plan.placements()
+
+
 def base_layouts(types, box, seed, want, deadline):
-    """Distinct layouts that place every base carton: the fixed stage-2 policies first (mixed stacks, then
-    single-SKU columns), then randomised ones. A column style that keeps failing is dropped."""
+    """Distinct layouts that place every base carton, as (placements, (mixed, attempt)): the fixed stage-2
+    policies first (mixed stacks, then single-SKU columns), then randomised ones. A column style that
+    keeps failing is dropped."""
     out, seen, misses = [], set(), {True: 0, False: 0}
     attempt = 0
     while len(out) < want and attempt < 6 * want and time.time() < deadline:
         for mixed in (True, False):
             if misses[mixed] >= 6 and misses[mixed] > 2 * len(out) or len(out) >= want:
                 continue
-            rng = random.Random(seed * 7919 + attempt)
-            plan = pack_one(types, box, policy(attempt, rng, mixed), rng)
-            if plan.unplaced:
-                plan = place_leftovers(plan.placements(), plan.unplaced, box)
-            if plan.unplaced:
+            pl = base_layout(types, box, seed, mixed, attempt)
+            if pl is None:
                 misses[mixed] += 1
                 continue
-            pl = plan.placements()
             key = layout_key(pl)
             if key not in seen:
                 seen.add(key)
-                out.append(pl)
+                out.append((pl, (mixed, attempt)))
         attempt += 1
     return out
 
@@ -940,6 +950,306 @@ def top_up(base, order, box, rules, objective):
     return space.items, extra
 
 
+def flat_lines(types, H):
+    return [t for t in types if min(o[2] for o in t.orients) <= H / 8]
+
+
+def block_shapes(t, o, flats, box, ncols):
+    """For columns of t stood as o, the best block of p x q columns per flat line whose common top
+    carries layers of that line. Returns {flat: (eff, p, q, (fa, fb, fh), per_layer, layers)}."""
+    a, b, h = o
+    n = int((box.H + EPS) // h)
+    r = box.H - n * h
+    out = {}
+    for f in flats:
+        if f is t:
+            continue
+        for fa, fb, fh in f.orients:
+            if fh > r + EPS:
+                continue
+            layers = int((r + EPS) // fh)
+            reach = 2 * max(fa, fb)
+            for p in range(1, ncols + 1):
+                P = p * a
+                if P > reach + a or P > box.L + EPS:
+                    break
+                for q in range(1, ncols // p + 1):
+                    Q = q * b
+                    if Q > reach + b or min(P, Q) > box.W + EPS or max(P, Q) > box.L + EPS:
+                        break
+                    per = int((P + EPS) // fa) * int((Q + EPS) // fb)
+                    if not per:
+                        continue
+                    eff = per * layers * fa * fb * fh / (P * Q * r)
+                    key = (round(eff, 2), -p * q)
+                    if f not in out or key > out[f][0]:
+                        out[f] = (key, eff, p, q, (fa, fb, fh), per, layers)
+    return {f: v[1:] for f, v in out.items()}
+
+
+def block_column(t, o, n, p, q, tops):
+    """p x q columns of n cartons of t, with flat layers on the shared top.
+    tops: list of (ctype, fa, fb, fh, count) per layer, laid on a grid from the corner."""
+    a, b, h = o
+    P, Q = p * a, q * b
+    items = [(t, i * a, j * b, k * h, a, b, h) for i in range(p) for j in range(q) for k in range(n)]
+    z = n * h
+    for f, fa, fb, fh, cnt in tops:
+        grid = [(i * fa, j * fb) for i in range(int((P + EPS) // fa)) for j in range(int((Q + EPS) // fb))]
+        items += [(f, x, y, z, fa, fb, fh) for x, y in grid[:cnt]]
+        z += fh
+    if P < Q:
+        items = [(u, y, x, zz, w, l, hh) for u, x, y, zz, l, w, hh in items]
+        P, Q = Q, P
+    return Column(P, Q, z, 0.0, 0.0, items, True)
+
+
+def block_columns(types, box, budget, kg_room, min_eff, complete):
+    """Advise mode: columns of a line whose headroom is wasted are grouped into blocks, and the blocks'
+    common tops carry layers of flat cartons, base cartons first, then extras within budget.
+    Returns (blocks, cartons left per type, extras used per type, kg room left)."""
+    H = box.H
+    flats = flat_lines(types, H)
+    left = {t: t.count for t in types}
+    used = {t: 0 for t in types}
+
+    def take(f, k):
+        """Up to k cartons of f: base first, then extras within budget and payload."""
+        nonlocal kg_room
+        base = min(k, left[f])
+        more = max(0, min(k - base, budget.get(f, 0) - used[f],
+                          int((kg_room + EPS) // f.kg) if f.kg > 0 else k))
+        left[f] -= base
+        used[f] += more
+        kg_room -= more * f.kg
+        return base + more
+
+    plans = []
+    for t in types:
+        if t in flats:
+            continue
+        o = max(t.orients, key=lambda o: (int(H // o[2]) * o[2], -abs(o[0] - o[1])))
+        a, b, h = max(o[0], o[1]), min(o[0], o[1]), o[2]
+        n = int((H + EPS) // h)
+        ncols = t.count // n
+        r = H - n * h
+        if not ncols or r < min(min(x[2] for x in f.orients) for f in flats) - EPS if flats else True:
+            continue
+        shapes = block_shapes(t, (a, b, h), flats, box, ncols + (ncols if complete else 0))
+        if not shapes:
+            continue
+        top = max(e[0] for e in shapes.values())
+        if top < min_eff:
+            continue
+        plans.append((-(r * a * b * ncols), t, (a, b, h), n, ncols, shapes, top))
+    blocks = []
+    for _, t, o, n, ncols, shapes, top in sorted(plans, key=lambda e: e[0]):
+        while True:
+            # A flat line that still has base cartons goes first when it is nearly as good as the best.
+            good = [(f, s) for f, s in shapes.items() if s[0] >= 0.85 * top and (left[f] or budget.get(f, 0) > used[f])]
+            if not good:
+                break
+            f, (eff, p, q, (fa, fb, fh), per, layers) = max(good, key=lambda e: (left[e[0]] > 0, e[1][0]))
+            need = p * q * n
+            have = left[t]
+            if have < need:
+                if not complete or have < need / 2 or budget.get(t, 0) - used[t] < need - have:
+                    break
+            got = take(t, need)
+            if got < need:
+                left[t] += min(got, have)
+                used[t] -= got - min(got, have)
+                kg_room += (got - min(got, have)) * t.kg
+                break
+            tops = []
+            for _ in range(layers):
+                k = take(f, per)
+                if k:
+                    tops.append((f, fa, fb, fh, k))
+                if k < per:
+                    break
+            blocks.append(block_column(t, o, n, p, q, tops))
+    return blocks, left, used, kg_room
+
+
+class FloorRects:
+    """Free floor as maximal rectangles (x, y, l, w), for placing column footprints one at a time."""
+
+    def __init__(self, L, W):
+        self.free = [(0.0, 0.0, L, W)]
+
+    def find(self, l, w, rule):
+        best = None
+        for fx, fy, fl, fw in self.free:
+            for a, b, rot in ((l, w, False), (w, l, True)):
+                if a <= fl + EPS and b <= fw + EPS:
+                    if rule == "front":
+                        key = (round(fx + a, 4), round(fy, 4), min(fl - a, fw - b))
+                    else:
+                        key = (round(min(fl - a, fw - b), 4), round(max(fl - a, fw - b), 4), round(fx, 4))
+                    if best is None or key < best[0]:
+                        best = (key, fx, fy, a, b, rot)
+        return best
+
+    def occupy(self, x, y, l, w):
+        out = []
+        for fx, fy, fl, fw in self.free:
+            if x >= fx + fl - EPS or x + l <= fx + EPS or y >= fy + fw - EPS or y + w <= fy + EPS:
+                out.append((fx, fy, fl, fw))
+                continue
+            if x > fx + EPS:
+                out.append((fx, fy, x - fx, fw))
+            if x + l < fx + fl - EPS:
+                out.append((x + l, fy, fx + fl - x - l, fw))
+            if y > fy + EPS:
+                out.append((fx, fy, fl, y - fy))
+            if y + w < fy + fw - EPS:
+                out.append((fx, y + w, fl, fy + fw - y - w))
+        out.sort(key=lambda r: -r[2] * r[3])
+        kept = []
+        for r in out:
+            if not any(r[0] >= k[0] - EPS and r[1] >= k[1] - EPS and r[0] + r[2] <= k[0] + k[2] + EPS
+                       and r[1] + r[3] <= k[1] + k[3] + EPS for k in kept):
+                kept.append(r)
+        self.free = kept
+
+
+def rect_floor(cols, box, rule):
+    """Place column footprints on the floor one by one, largest first, into the free rectangles.
+    Returns (lanes holding one column each, columns left over, the free rectangles)."""
+    fr = FloorRects(box.L, box.W)
+    lanes, left = [], []
+    for c in sorted(cols, key=lambda c: (-c.l * c.w, -c.l)):
+        spot = fr.find(c.l, c.w, rule)
+        if spot is None:
+            left.append(c)
+            continue
+        _, x, y, a, b, rot = spot
+        fr.occupy(x, y, a, b)
+        lanes.append(Lane(x, y, a, b, [(c, 0.0, rot)]))
+    return lanes, left, fr
+
+
+def block_candidate(types, box, rules, objective, pol, rng, min_eff=0.6, complete=True, floor="front"):
+    """Advise mode: a whole advised load built at once. Blocks of columns with flat cartons on their tops,
+    the other cartons in columns as in planning, the floor in lanes, then the rest topped up loose.
+    Returns (placements, extras per type) or None when a base carton cannot be placed."""
+    budget = {}
+    for t in types:
+        rule = rules.get((t.po, t.sku), LineRule())
+        if objective == "value" and rule.value <= 0:
+            budget[t] = 0
+        else:
+            budget[t] = int(min(rule.max_extra, 10 ** 6))
+    kg_room = box.payload - sum(t.kg * t.count for t in types)
+    blocks, left, used, kg_room = block_columns(types, box, budget, kg_room, min_eff, complete)
+    rest = {with_count(t, n): t for t, n in left.items() if n}
+    cols = (stack_columns if pol.mixed else build_columns)(list(rest), box.H, pol.orient) if rest else []
+    for c in cols:
+        c.items = [(rest.get(it[0], it[0]),) + tuple(it[1:]) for it in c.items]
+    if floor == "lanes":
+        free = []
+        lanes, unplaced_cols = pack_floor(blocks + cols, box, rng, pol, free)
+    else:
+        lanes, unplaced_cols, fr = rect_floor(blocks + cols, box, floor)
+        free = fr.free
+    if not unplaced_cols and free:
+        # The free floor takes whole columns of extras, stood to the roof, before anything goes in loose.
+        area = box.L * box.W - sum(c.l * c.w for lane in lanes for c, _, _ in lane.cols)
+        pool = extra_columns(types, box, budget, used, kg_room, area)
+        if floor == "lanes":
+            while free and pool:
+                free.sort(key=lambda r: r[2] * r[3])
+                lanes += fill_rect(free.pop(), pool, rng, pol, math.inf, free)
+        else:
+            while fr.free and pool:
+                rect = fr.free[0]
+                fr.occupy(*rect)
+                inner = [rect]
+                while inner and pool:
+                    inner.sort(key=lambda r: r[2] * r[3])
+                    lanes += fill_rect(inner.pop(), pool, rng, pol, math.inf, inner)
+    placed = ContainerPlan(lanes, {}).placements()
+    counts = {}
+    for p in placed:
+        counts[p[0]] = counts.get(p[0], 0) + 1
+    space = Space(box, placed)
+    for t in sorted(types, key=lambda t: (-min(min(o[:2]) for o in t.orients), -t.vol)):
+        short = t.count - counts.get(t, 0)
+        if short > 0 and space.place(t, short) < short:
+            return None
+    extras = {t: k - t.count for t, k in counts.items() if k > t.count}
+    return finish_top_up(space, types, box, rules, objective, extras)
+
+
+def extra_columns(types, box, budget, used, kg_room, area, min_eff=0.9):
+    """Columns of extra cartons of one line each, stood to the roof, for free floor. Only lines whose
+    column fills at least min_eff of the height, within each line's budget and the payload."""
+    opts = []
+    for t in types:
+        o = max(t.orients, key=lambda o: (int(box.H // o[2]) * o[2], o[0] * o[1]))
+        n = int((box.H + EPS) // o[2])
+        if n and n * o[2] >= min_eff * box.H:
+            opts.append((-n * o[2], t, o, n))
+    pool = []
+    for _, t, o, n in sorted(opts, key=lambda e: e[0]):
+        k = min((budget.get(t, 0) - used.get(t, 0)) // n, int(area // (o[0] * o[1])) + 1)
+        if t.kg > 0:
+            k = min(k, int((kg_room + EPS) // (n * t.kg)))
+        if k > 0:
+            pool += [make_column(t, o, n, box.H) for _ in range(k)]
+            kg_room -= k * n * t.kg
+    return pool
+
+
+def finish_top_up(space, types, box, rules, objective, extras):
+    """Top up the remaining space line by line, then trim each line's extras to its cap and multiple."""
+    kg_room = box.payload - sum(p[0].kg for p in space.items)
+    for order in fill_orders(types, rules)[:1]:
+        for t in order:
+            rule = rules.get((t.po, t.sku), LineRule())
+            if objective == "value" and rule.value <= 0:
+                continue
+            cap = min(rule.max_extra, 10 ** 6) - extras.get(t, 0)
+            if t.kg > 0:
+                cap = min(cap, int((kg_room + EPS) // t.kg))
+            k = space.place(t, int(cap)) if cap > 0 else 0
+            if k:
+                extras[t] = extras.get(t, 0) + k
+                kg_room -= k * t.kg
+    items = trim_extras(space.items, extras, rules, box)
+    if items is None:
+        return None
+    return items, {t: k for t, k in extras.items() if k}
+
+
+def trim_extras(items, extras, rules, box):
+    """Remove extras of a line, top cartons first, until its count is within the cap and a multiple of
+    the case pack. Extras dict is updated. Returns the placements, or None if a carton cannot come off."""
+    items = list(items)
+    for t in list(extras):
+        rule = rules.get((t.po, t.sku), LineRule())
+        k = extras[t]
+        want = min(k, rule.max_extra)
+        want -= want % rule.multiple
+        drop = k - want
+        while drop:
+            tops = {}
+            for p in items:
+                tops.setdefault(round(p[3], 4), []).append(p)
+            free = [p for p in items if p[0] is t and not any(
+                p[1] < q[1] + q[4] - EPS and q[1] < p[1] + p[4] - EPS and p[2] < q[2] + q[5] - EPS
+                and q[2] < p[2] + p[5] - EPS for q in tops.get(round(p[3] + p[6], 4), []))]
+            if not free:
+                return None
+            free.sort(key=lambda p: -(p[3] + p[6]))
+            gone = {id(p) for p in free[:drop]}
+            items = [p for p in items if id(p) not in gone]
+            drop -= len(gone)
+            extras[t] -= len(gone)
+    return items
+
+
 def score(extra, rules, objective):
     m3 = sum(t.vol * k for t, k in extra.items()) / 1e6
     if objective == "cartons":
@@ -949,29 +1259,98 @@ def score(extra, rules, objective):
     return (m3, sum(extra.values()))
 
 
+BLOCK_VARIANTS = [(floor, complete, True) for floor in ("fit", "front") for complete in (True, False)]
+
+
+def block_variant(types, box, rules, objective, seed, variant):
+    floor, complete, mixed = variant
+    rng = random.Random(seed * 7919)
+    return block_candidate(types, box, rules, objective, Policy("match", False, 3.0, 0.0, mixed), rng,
+                           0.6, complete, floor)
+
+
 def advise_container(types, box, rules, objective, seed, deadline, fallback=None, layouts=10, keep=3):
-    """Best (placements, extras) for one container: several base layouts are screened with one top-up
-    order, then the most promising get every order."""
+    """Best (placements, extras, recipe) for one container, or None if no candidate places every base
+    carton. Candidates: whole advised loads built from blocks of columns with flat cartons on top; and
+    several base layouts screened with one top-up order, the most promising then topped up with every
+    order. The recipe says how the winner was built, so it can be built again with grown cartons."""
+    cands = []
+    for variant in BLOCK_VARIANTS:
+        res = block_variant(types, box, rules, objective, seed, variant)
+        if res is not None:
+            cands.append(res + (("block", variant),))
     bases = base_layouts(types, box, seed, layouts, deadline)
     if not bases and fallback is not None:
-        bases = [fallback]
-    if not bases:
-        return None
+        bases = [(fallback, None)]
     orders = fill_orders(types, rules)
     tried = []
-    for base in bases:
+    for base, how in bases:
         if time.time() > deadline and tried:
             break
         pl, extra = top_up(base, orders[0], box, rules, objective)
-        tried.append((sum(t.vol * k for t, k in extra.items()), len(tried), base, (pl, extra)))
+        tried.append((sum(t.vol * k for t, k in extra.items()), len(tried), base, how, (pl, extra, ("layout", how, 0))))
     tried.sort(key=lambda e: (-e[0], e[1]))
-    cands = [e[3] for e in tried]
-    for _, _, base, _ in tried[:keep]:
-        for order in orders[1:]:
+    cands += [e[4] for e in tried]
+    for _, _, base, how, _ in tried[:keep]:
+        for k, order in enumerate(orders[1:], 1):
             if time.time() > deadline:
                 break
-            cands.append(top_up(base, order, box, rules, objective))
+            cands.append(top_up(base, order, box, rules, objective) + (("layout", how, k),))
+    if not cands:
+        return None
     return max(cands, key=lambda c: score(c[1], rules, objective))
+
+
+def rebuild(recipe, types, box, rules, objective, seed, fallback=None):
+    """Build an advised load again the way a recipe says, e.g. with grown cartons. None if a base carton
+    is left over."""
+    if recipe[0] == "block":
+        res = block_variant(types, box, rules, objective, seed, recipe[1])
+        return None if res is None else res + (recipe,)
+    _, how, k = recipe
+    base = fallback if how is None else base_layout(types, box, seed, *how)
+    if base is None:
+        return None
+    orders = fill_orders(types, rules)
+    return top_up(base, orders[min(k, len(orders) - 1)], box, rules, objective) + (recipe,)
+
+
+def advised_tolerance(loads, extras, recipes, box, rules, objective, seed):
+    """Tolerance of an advised load. Per container and growth of 1, 2 and 3 mm: whether every base carton
+    still packs (base_fits), the extras recommended at nominal size, and how many of them the Advisor can
+    still place with every carton grown (extras_kept). The advised load is built again the same way with
+    grown cartons; if its base no longer packs, the stage-2 packer tries a few layouts of its own. Each
+    step's caps are what the step before kept, so extras_kept never rises as cartons grow. fits and
+    unplaced count base cartons left over plus extras lost."""
+    tolerance = {f"{mm}mm": {} for mm in (1, 2, 3)}
+    for i, types in loads.items():
+        rec = {}
+        for t in types:
+            rec[(t.po, t.sku)] = rec.get((t.po, t.sku), 0) + extras[i].get(t, 0)
+        kept = dict(rec)
+        for mm in (1, 2, 3):
+            grown = [t.grown(mm / 10) for t in types]
+            caps = {}
+            for t in types:
+                rule = rules.get((t.po, t.sku), LineRule())
+                caps[(t.po, t.sku)] = LineRule(kept[(t.po, t.sku)], rule.multiple, rule.value)
+            res = rebuild(recipes[i], grown, box, caps, objective, seed) if recipes.get(i) else None
+            base_unplaced = 0
+            if res is None:
+                plan = pack_complete(grown, box, seed, 1)
+                base_unplaced = sum(plan.unplaced.values())
+                if not base_unplaced:
+                    res = top_up(plan.placements(), fill_orders(grown, caps)[0], box, caps, objective)
+            got = {}
+            for t, k in (res[1].items() if res else ()):
+                got[(t.po, t.sku)] = got.get((t.po, t.sku), 0) + k
+            kept = {k: min(n, got.get(k, 0)) for k, n in kept.items()}
+            n_rec, n_kept = sum(rec.values()), sum(kept.values())
+            tolerance[f"{mm}mm"][str(i)] = {
+                "fits": base_unplaced == 0 and n_kept == n_rec, "unplaced": base_unplaced + n_rec - n_kept,
+                "base_fits": base_unplaced == 0, "base_unplaced": base_unplaced,
+                "extras_recommended": n_rec, "extras_kept": n_kept}
+    return tolerance
 
 
 def load_totals(placements, box):
@@ -1003,20 +1382,21 @@ def advise_shipment(args):
         source = "planned"
     lb = lower_bound(groups, box) if args.allocation else lb
 
-    # Leave a tenth of the time for the tolerance re-packs and the outputs.
-    budget_end = deadline - 0.1 * args.time_limit
-    base_pl, placements, extras, unplaced = {}, {}, {}, {}
+    # Leave a quarter of the time for the tolerance runs and the outputs.
+    budget_end = deadline - 0.25 * args.time_limit
+    base_pl, placements, extras, unplaced, recipes = {}, {}, {}, {}, {}
     todo = list(loads.items())
     for n, (i, types) in enumerate(todo):
-        share = (budget_end - time.time()) / (len(todo) - n)
-        res = advise_container(types, box, rules, args.objective, args.seed, time.time() + share, fallbacks.get(i))
+        # Each container gets an even share of the time left, at most 45 s: more layouts rarely pay.
+        share = min(45.0, (budget_end - time.time()) / (len(todo) - n))
+        base_pl[i] = [(t,) for t in types for _ in range(t.count)]  # for the base totals
+        res = advise_container(types, box, rules, args.objective, args.seed, time.time() + share, fallbacks.get(i),
+                               layouts=4, keep=2)
         if res is None:
             plan = pack_complete(types, box, args.seed, 4)
             placements[i], extras[i], unplaced[i] = plan.placements(), {}, plan.unplaced
-            base_pl[i] = placements[i]
             continue
-        placements[i], extras[i] = res
-        base_pl[i] = placements[i][:len(placements[i]) - sum(extras[i].values())]
+        placements[i], extras[i], recipes[i] = res
         unplaced[i] = {}
 
     added = {}
@@ -1024,8 +1404,7 @@ def advise_shipment(args):
         for t, k in ex.items():
             added[(t.po, t.sku)] = added.get((t.po, t.sku), 0) + k
     advised_lines = [with_count(t, t.count + added.get((t.po, t.sku), 0)) for t in lines]
-    advised_loads = {i: [with_count(t, t.count + extras[i].get(t, 0)) for t in types] for i, types in loads.items()}
-    tolerance = tolerance_check(advised_loads, box, args.seed)
+    tolerance = advised_tolerance(loads, extras, recipes, box, rules, args.objective, args.seed)
     checks = self_check(placements, advised_lines, box, {t.po for ts in loads.values() for t in ts})
     final = {i: ({t.group for t in types}, ContainerPlan([], unplaced[i], placements[i])) for i, types in loads.items()}
 
@@ -1201,22 +1580,37 @@ def report(s, box, args):
         out.append(f"| {d['container']} | {', '.join(d['groups'])} | {d['cartons']:,} | {d['m3']:.1f} m³ | "
                    f"{d['kg']:,.0f} kg | {100 * d['fill']:.1f}% | {d['spare_length_cm']:g} cm / "
                    f"{d['spare_width_cm']:g} cm / {d['spare_height_cm']:g} cm |")
-    out += ["", "**Tolerance:** each container re-packed with every carton grown in each dimension.", "",
+    advised = any("base_fits" in r for t in s["tolerance"].values() for r in t.values())
+    out += ["", "**Tolerance:** " + ("each advised container built again the same way with every carton grown in "
+                                     "each dimension: do the base cartons still pack, and how many of the "
+                                     "recommended extras still fit (never more than at the smaller growth)."
+                                     if advised else "each container re-packed with every carton grown in each "
+                                     "dimension."), "",
             "| Container | +1 mm | +2 mm | +3 mm |", "|-----------|-------|-------|-------|"]
     for d in s["containers_detail"]:
         c = str(d["container"])
-        cells = [("fits" if s["tolerance"][k][c]["fits"] else f"{s['tolerance'][k][c]['unplaced']} cartons do not fit")
-                 for k in ("1mm", "2mm", "3mm")]
+        cells = [tolerance_cell(s["tolerance"][k][c]) for k in ("1mm", "2mm", "3mm")]
         out.append(f"| {c} | " + " | ".join(cells) + " |")
-    if any(not r["fits"] for t in s["tolerance"].values() for r in t.values()):
-        out.append("\nWhere a grown load does not fit, the plan is tight: confirm carton sizes before loading, "
-                   "or keep a fallback with one more container ready.")
+    if any(not r.get("base_fits", r["fits"]) for t in s["tolerance"].values() for r in t.values()):
+        out.append("\nWhere the packer left cartons unplaced, it found no layout for the grown cartons. That is a search "
+                   "result, not proof they cannot fit, but it marks the plan as tight: confirm carton sizes before "
+                   "loading, or keep a fallback with one more container ready.")
+    if advised and any(r["extras_kept"] < r["extras_recommended"] for t in s["tolerance"].values() for r in t.values()):
+        out.append("\nWhere fewer extras are kept, the top-up is tight: confirm carton sizes before "
+                   "ordering the full extra quantities.")
     ck = s["checks"]
     out += ["", "**Checks Run:** " + ", ".join(f"{k} {'ok' if v['ok'] else 'FAILED'}"
                                                for k, v in ck.items() if k != "min_support")
             + f", minimum support {100 * ck['min_support']:.0f}% (threshold {100 * args.support:.0f}%).",
             "", "Carton positions for every container are in placements.csv (cm, z up)."]
     return "\n".join(out) + "\n"
+
+
+def tolerance_cell(r):
+    if "base_fits" in r:
+        base = "base fits" if r["base_fits"] else f"base: packer left {r['base_unplaced']} unplaced"
+        return f"{base}; {r['extras_kept']} of {r['extras_recommended']} extras kept"
+    return "fits" if r["fits"] else f"packer left {r['unplaced']} unplaced"
 
 
 def advisor_report(a, rows):
