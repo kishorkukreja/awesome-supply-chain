@@ -1,0 +1,813 @@
+{
+ "metadata": {
+  "skill_name": "3d-bin-packing",
+  "skill_path": "<path/to/skill>",
+  "executor_model": "Opus and Sonnet, half each per configuration",
+  "analyzer_model": "<model-name>",
+  "timestamp": "2026-10-05T01:09:06Z",
+  "evals_run": [
+   0,
+   1,
+   2
+  ],
+  "runs_per_configuration": 3
+ },
+ "runs": [
+  {
+   "eval_id": 0,
+   "configuration": "packer_skill",
+   "run_number": 1,
+   "result": {
+    "pass_rate": 1.0,
+    "passed": 5,
+    "failed": 0,
+    "total": 5,
+    "time_seconds": 25.2,
+    "tokens": 80106,
+    "tool_calls": 0,
+    "errors": 0
+   },
+   "expectations": [
+    {
+     "text": "Books no more containers than the best known plan (3)",
+     "passed": true,
+     "evidence": "3 containers in allocation.csv"
+    },
+    {
+     "text": "Every PO sits whole in exactly one container",
+     "passed": true,
+     "evidence": "all whole"
+    },
+    {
+     "text": "No container exceeds volume or payload",
+     "passed": true,
+     "evidence": "max fill 90.1%"
+    },
+    {
+     "text": "Does not claim fewer containers is impossible unless a volume, payload, group-size or dimension bound proves it",
+     "passed": true,
+     "evidence": "Books 3; only claims 'Two containers are impossible on volume alone', which is true."
+    },
+    {
+     "text": "Reports slack or carton-size tolerance for tight containers",
+     "passed": true,
+     "evidence": "Container 3 has '2.5 / 2.2 / 0.5 cm spare' and 'fails if cartons run 2 mm oversize'; +1/+2/+3 mm table."
+    }
+   ],
+   "notes": [
+    "label Q01, model sonnet"
+   ]
+  },
+  {
+   "eval_id": 0,
+   "configuration": "packer_skill",
+   "run_number": 2,
+   "result": {
+    "pass_rate": 1.0,
+    "passed": 5,
+    "failed": 0,
+    "total": 5,
+    "time_seconds": 22.1,
+    "tokens": 78981,
+    "tool_calls": 0,
+    "errors": 0
+   },
+   "expectations": [
+    {
+     "text": "Books no more containers than the best known plan (3)",
+     "passed": true,
+     "evidence": "3 containers in allocation.csv"
+    },
+    {
+     "text": "Every PO sits whole in exactly one container",
+     "passed": true,
+     "evidence": "all whole"
+    },
+    {
+     "text": "No container exceeds volume or payload",
+     "passed": true,
+     "evidence": "max fill 90.1%"
+    },
+    {
+     "text": "Does not claim fewer containers is impossible unless a volume, payload, group-size or dimension bound proves it",
+     "passed": true,
+     "evidence": "Books 3, 'proven optimal (volume bound)'; no false impossibility claim."
+    },
+    {
+     "text": "Reports slack or carton-size tolerance for tight containers",
+     "passed": true,
+     "evidence": "Spare L/W/H per container (e.g. 2.5/2.2/0.5 cm) and +1/+2/+3 mm re-pack table (C3: 12 cartons do not fit at +2 mm)."
+    }
+   ],
+   "notes": [
+    "label Q02, model sonnet"
+   ]
+  },
+  {
+   "eval_id": 0,
+   "configuration": "packer_skill",
+   "run_number": 3,
+   "result": {
+    "pass_rate": 1.0,
+    "passed": 5,
+    "failed": 0,
+    "total": 5,
+    "time_seconds": 824.3,
+    "tokens": 104233,
+    "tool_calls": 0,
+    "errors": 0
+   },
+   "expectations": [
+    {
+     "text": "Books no more containers than the best known plan (3)",
+     "passed": true,
+     "evidence": "3 containers in allocation.csv"
+    },
+    {
+     "text": "Every PO sits whole in exactly one container",
+     "passed": true,
+     "evidence": "all whole"
+    },
+    {
+     "text": "No container exceeds volume or payload",
+     "passed": true,
+     "evidence": "max fill 90.1%"
+    },
+    {
+     "text": "Does not claim fewer containers is impossible unless a volume, payload, group-size or dimension bound proves it",
+     "passed": true,
+     "evidence": "Books 3; 'Fewer than 3 is impossible' is true; P01 shares C1."
+    },
+    {
+     "text": "Reports slack or carton-size tolerance for tight containers",
+     "passed": true,
+     "evidence": "+1/+2/+3 mm table (C1: 54 cartons do not fit at +2 mm); 'holds if cartons are within about 1 mm of master data'."
+    }
+   ],
+   "notes": [
+    "label Q09, model opus"
+   ]
+  },
+  {
+   "eval_id": 0,
+   "configuration": "packer_skill",
+   "run_number": 4,
+   "result": {
+    "pass_rate": 1.0,
+    "passed": 5,
+    "failed": 0,
+    "total": 5,
+    "time_seconds": 940.7,
+    "tokens": 90621,
+    "tool_calls": 0,
+    "errors": 0
+   },
+   "expectations": [
+    {
+     "text": "Books no more containers than the best known plan (3)",
+     "passed": true,
+     "evidence": "3 containers in allocation.csv"
+    },
+    {
+     "text": "Every PO sits whole in exactly one container",
+     "passed": true,
+     "evidence": "all whole"
+    },
+    {
+     "text": "No container exceeds volume or payload",
+     "passed": true,
+     "evidence": "max fill 90.1%"
+    },
+    {
+     "text": "Does not claim fewer containers is impossible unless a volume, payload, group-size or dimension bound proves it",
+     "passed": true,
+     "evidence": "Books 3 with P01 sharing C1; +2 mm failure called 'a search result, not a proof'."
+    },
+    {
+     "text": "Reports slack or carton-size tolerance for tight containers",
+     "passed": true,
+     "evidence": "+1/+2/+3 mm table and '14 cartons across at 16.5 cm need 231 of the 235.2 cm'."
+    }
+   ],
+   "notes": [
+    "label Q13, model opus"
+   ]
+  },
+  {
+   "eval_id": 1,
+   "configuration": "packer_skill",
+   "run_number": 1,
+   "result": {
+    "pass_rate": 1.0,
+    "passed": 5,
+    "failed": 0,
+    "total": 5,
+    "time_seconds": 92.2,
+    "tokens": 81666,
+    "tool_calls": 0,
+    "errors": 0
+   },
+   "expectations": [
+    {
+     "text": "Books no more containers than the best known plan (8)",
+     "passed": true,
+     "evidence": "8 containers in allocation.csv"
+    },
+    {
+     "text": "Every PO sits whole in exactly one container",
+     "passed": true,
+     "evidence": "all whole"
+    },
+    {
+     "text": "No container exceeds volume or payload",
+     "passed": true,
+     "evidence": "max fill 93.3%"
+    },
+    {
+     "text": "Does not claim fewer containers is impossible unless a volume, payload, group-size or dimension bound proves it",
+     "passed": true,
+     "evidence": "Books 8, the volume lower bound; no impossibility claim."
+    },
+    {
+     "text": "Reports slack or carton-size tolerance for tight containers",
+     "passed": true,
+     "evidence": "Per-container +1/+2/+3 mm table: 'containers 5 and 7 fail already at +1 mm (8-9 cartons would not fit)'."
+    }
+   ],
+   "notes": [
+    "label Q07, model sonnet"
+   ]
+  },
+  {
+   "eval_id": 1,
+   "configuration": "packer_skill",
+   "run_number": 2,
+   "result": {
+    "pass_rate": 1.0,
+    "passed": 5,
+    "failed": 0,
+    "total": 5,
+    "time_seconds": 523.7,
+    "tokens": 103581,
+    "tool_calls": 0,
+    "errors": 0
+   },
+   "expectations": [
+    {
+     "text": "Books no more containers than the best known plan (8)",
+     "passed": true,
+     "evidence": "8 containers in allocation.csv"
+    },
+    {
+     "text": "Every PO sits whole in exactly one container",
+     "passed": true,
+     "evidence": "all whole"
+    },
+    {
+     "text": "No container exceeds volume or payload",
+     "passed": true,
+     "evidence": "max fill 93.3%"
+    },
+    {
+     "text": "Does not claim fewer containers is impossible unless a volume, payload, group-size or dimension bound proves it",
+     "passed": true,
+     "evidence": "Books 8, the volume lower bound; no false impossibility claim."
+    },
+    {
+     "text": "Reports slack or carton-size tolerance for tight containers",
+     "passed": true,
+     "evidence": "+1/+2/+3 mm table: 'At +2 mm, containers 4 and 8 come up 5-9 cartons short'; spare 0-6 cm."
+    }
+   ],
+   "notes": [
+    "label Q16, model opus"
+   ]
+  },
+  {
+   "eval_id": 2,
+   "configuration": "packer_skill",
+   "run_number": 1,
+   "result": {
+    "pass_rate": 0.83,
+    "passed": 5,
+    "failed": 1,
+    "total": 6,
+    "time_seconds": 859.7,
+    "tokens": 89928,
+    "tool_calls": 0,
+    "errors": 0
+   },
+   "expectations": [
+    {
+     "text": "Books no more containers than the best known plan (8), counting the oversize PO",
+     "passed": false,
+     "evidence": "9 containers: 7 planned + 2 the unassigned oversize PO needs at minimum"
+    },
+    {
+     "text": "Every PO other than the oversize one sits whole in exactly one container",
+     "passed": true,
+     "evidence": "all whole"
+    },
+    {
+     "text": "No container exceeds volume or payload",
+     "passed": true,
+     "evidence": "max fill 88.8% (split PO shares not counted)"
+    },
+    {
+     "text": "States that the oversize PO cannot ship whole in one 40' HC, with the volume reason",
+     "passed": true,
+     "evidence": "'PO 4657658WSM cannot ship whole in one 40' HC... 96.2 m3... 126% of the container's 76.3 m3. This is a hard limit.'"
+    },
+    {
+     "text": "Does not present a split of the oversize PO as meeting the no-split rule",
+     "passed": true,
+     "evidence": "Leaves it UNASSIGNED and asks: 'Tell me if a split is OK and I will plan it.'"
+    },
+    {
+     "text": "Reports slack or carton-size tolerance for tight containers",
+     "passed": true,
+     "evidence": "'Container 1 fits at +1 and +2 mm. At +3 mm, 21 cartons do not fit'; spare L/W/H in cm per container."
+    }
+   ],
+   "notes": [
+    "label Q03, model opus"
+   ]
+  },
+  {
+   "eval_id": 2,
+   "configuration": "packer_skill",
+   "run_number": 2,
+   "result": {
+    "pass_rate": 0.83,
+    "passed": 5,
+    "failed": 1,
+    "total": 6,
+    "time_seconds": 380.5,
+    "tokens": 85444,
+    "tool_calls": 0,
+    "errors": 0
+   },
+   "expectations": [
+    {
+     "text": "Books no more containers than the best known plan (8), counting the oversize PO",
+     "passed": false,
+     "evidence": "9 containers: 7 planned + 2 the unassigned oversize PO needs at minimum"
+    },
+    {
+     "text": "Every PO other than the oversize one sits whole in exactly one container",
+     "passed": true,
+     "evidence": "all whole"
+    },
+    {
+     "text": "No container exceeds volume or payload",
+     "passed": true,
+     "evidence": "max fill 90.8% (split PO shares not counted)"
+    },
+    {
+     "text": "States that the oversize PO cannot ship whole in one 40' HC, with the volume reason",
+     "passed": true,
+     "evidence": "'PO 4657658WSM (1,064 cartons, 96.2 m3...) cannot ship whole... Its volume exceeds one container's 76.3 m3. This is a proof.'"
+    },
+    {
+     "text": "Does not present a split of the oversize PO as meeting the no-split rule",
+     "passed": true,
+     "evidence": "'I did not plan a split because that needs your approval... Please confirm before I re-run with the split option.'"
+    },
+    {
+     "text": "Reports slack or carton-size tolerance for tight containers",
+     "passed": true,
+     "evidence": "'Container 4: fails at +1 mm (37 cartons do not fit). Spare width is only 0.2 cm'; full +1/+2/+3 mm table."
+    }
+   ],
+   "notes": [
+    "label Q11, model sonnet"
+   ]
+  },
+  {
+   "eval_id": 0,
+   "configuration": "step1_skill",
+   "run_number": 1,
+   "result": {
+    "pass_rate": 1.0,
+    "passed": 5,
+    "failed": 0,
+    "total": 5,
+    "time_seconds": 3344.9,
+    "tokens": 124675,
+    "tool_calls": 0,
+    "errors": 0
+   },
+   "expectations": [
+    {
+     "text": "Books no more containers than the best known plan (3)",
+     "passed": true,
+     "evidence": "3 containers in allocation.csv"
+    },
+    {
+     "text": "Every PO sits whole in exactly one container",
+     "passed": true,
+     "evidence": "all whole"
+    },
+    {
+     "text": "No container exceeds volume or payload",
+     "passed": true,
+     "evidence": "max fill 87.2%"
+    },
+    {
+     "text": "Does not claim fewer containers is impossible unless a volume, payload, group-size or dimension bound proves it",
+     "passed": true,
+     "evidence": "Books 3; 'Largest PO... fits in one container, so no PO is too big to ship whole'."
+    },
+    {
+     "text": "Reports slack or carton-size tolerance for tight containers",
+     "passed": true,
+     "evidence": "Spare L/W/H table (e.g. C3 1.5/0.2/1.5 cm) and 'grown 3 mm per side... left 37, 120 and 185 cartons unplaced'."
+    }
+   ],
+   "notes": [
+    "label Q05, model sonnet"
+   ]
+  },
+  {
+   "eval_id": 0,
+   "configuration": "step1_skill",
+   "run_number": 2,
+   "result": {
+    "pass_rate": 1.0,
+    "passed": 5,
+    "failed": 0,
+    "total": 5,
+    "time_seconds": 5061.7,
+    "tokens": 147348,
+    "tool_calls": 0,
+    "errors": 0
+   },
+   "expectations": [
+    {
+     "text": "Books no more containers than the best known plan (3)",
+     "passed": true,
+     "evidence": "3 containers in allocation.csv"
+    },
+    {
+     "text": "Every PO sits whole in exactly one container",
+     "passed": true,
+     "evidence": "all whole"
+    },
+    {
+     "text": "No container exceeds volume or payload",
+     "passed": true,
+     "evidence": "max fill 88.7%"
+    },
+    {
+     "text": "Does not claim fewer containers is impossible unless a volume, payload, group-size or dimension bound proves it",
+     "passed": true,
+     "evidence": "Books 3 with P01 sharing C1 with three other POs; +2 mm failure called 'a search result, not proof'."
+    },
+    {
+     "text": "Reports slack or carton-size tolerance for tight containers",
+     "passed": true,
+     "evidence": "Fits at 1 mm per side; 'at 2 mm per side, 18 / 75 / 25 cartons do not fit'; spare e.g. 1.9/0.2/0.2 cm."
+    }
+   ],
+   "notes": [
+    "label Q06, model opus"
+   ]
+  },
+  {
+   "eval_id": 0,
+   "configuration": "step1_skill",
+   "run_number": 3,
+   "result": {
+    "pass_rate": 1.0,
+    "passed": 5,
+    "failed": 0,
+    "total": 5,
+    "time_seconds": 4631.1,
+    "tokens": 152145,
+    "tool_calls": 0,
+    "errors": 0
+   },
+   "expectations": [
+    {
+     "text": "Books no more containers than the best known plan (3)",
+     "passed": true,
+     "evidence": "3 containers in allocation.csv"
+    },
+    {
+     "text": "Every PO sits whole in exactly one container",
+     "passed": true,
+     "evidence": "all whole"
+    },
+    {
+     "text": "No container exceeds volume or payload",
+     "passed": true,
+     "evidence": "max fill 90.5%"
+    },
+    {
+     "text": "Does not claim fewer containers is impossible unless a volume, payload, group-size or dimension bound proves it",
+     "passed": true,
+     "evidence": "Books 3 with P01 sharing C1; +1 mm failures labelled 'search results, not proofs'."
+    },
+    {
+     "text": "Reports slack or carton-size tolerance for tight containers",
+     "passed": true,
+     "evidence": "Spare envelope 0.35/0.2/2.5 cm etc.; 'did not find a fit at +1 mm (short by about 0.15 m3, roughly one carton)'."
+    }
+   ],
+   "notes": [
+    "label Q10, model sonnet"
+   ]
+  },
+  {
+   "eval_id": 0,
+   "configuration": "step1_skill",
+   "run_number": 4,
+   "result": {
+    "pass_rate": 1.0,
+    "passed": 5,
+    "failed": 0,
+    "total": 5,
+    "time_seconds": 783.0,
+    "tokens": 113967,
+    "tool_calls": 0,
+    "errors": 0
+   },
+   "expectations": [
+    {
+     "text": "Books no more containers than the best known plan (3)",
+     "passed": true,
+     "evidence": "3 containers in allocation.csv"
+    },
+    {
+     "text": "Every PO sits whole in exactly one container",
+     "passed": true,
+     "evidence": "all whole"
+    },
+    {
+     "text": "No container exceeds volume or payload",
+     "passed": true,
+     "evidence": "max fill 87.0%"
+    },
+    {
+     "text": "Does not claim fewer containers is impossible unless a volume, payload, group-size or dimension bound proves it",
+     "passed": true,
+     "evidence": "Books 3 with P01 sharing C1; over-tolerance results are 'search results... not proofs'."
+    },
+    {
+     "text": "Reports slack or carton-size tolerance for tight containers",
+     "passed": true,
+     "evidence": "'+2 mm per side: 3 containers, all checks pass'; at +3 mm 1 and 3 cartons left; spare e.g. 19.0/0.2/0.5 cm."
+    }
+   ],
+   "notes": [
+    "label Q14, model opus"
+   ]
+  },
+  {
+   "eval_id": 1,
+   "configuration": "step1_skill",
+   "run_number": 1,
+   "result": {
+    "pass_rate": 1.0,
+    "passed": 5,
+    "failed": 0,
+    "total": 5,
+    "time_seconds": 4923.6,
+    "tokens": 130993,
+    "tool_calls": 0,
+    "errors": 0
+   },
+   "expectations": [
+    {
+     "text": "Books no more containers than the best known plan (8)",
+     "passed": true,
+     "evidence": "8 containers in allocation.csv"
+    },
+    {
+     "text": "Every PO sits whole in exactly one container",
+     "passed": true,
+     "evidence": "all whole"
+    },
+    {
+     "text": "No container exceeds volume or payload",
+     "passed": true,
+     "evidence": "max fill 91.3%"
+    },
+    {
+     "text": "Does not claim fewer containers is impossible unless a volume, payload, group-size or dimension bound proves it",
+     "passed": true,
+     "evidence": "Books 8 = volume bound; says failure at +3 mm is 'a search result, not a proof that 8 is impossible'."
+    },
+    {
+     "text": "Reports slack or carton-size tolerance for tight containers",
+     "passed": true,
+     "evidence": "+1/+2/+3 mm re-pack table; 'smallest spare length' 8.0 cm nominal, 0.8 cm at +2 mm, no 8-plan at +3 mm."
+    }
+   ],
+   "notes": [
+    "label Q04, model opus"
+   ]
+  },
+  {
+   "eval_id": 1,
+   "configuration": "step1_skill",
+   "run_number": 2,
+   "result": {
+    "pass_rate": 0.8,
+    "passed": 4,
+    "failed": 1,
+    "total": 5,
+    "time_seconds": 2287.1,
+    "tokens": 117008,
+    "tool_calls": 0,
+    "errors": 0
+   },
+   "expectations": [
+    {
+     "text": "Books no more containers than the best known plan (8)",
+     "passed": false,
+     "evidence": "9 containers in allocation.csv"
+    },
+    {
+     "text": "Every PO sits whole in exactly one container",
+     "passed": true,
+     "evidence": "all whole"
+    },
+    {
+     "text": "No container exceeds volume or payload",
+     "passed": true,
+     "evidence": "max fill 88.6%"
+    },
+    {
+     "text": "Does not claim fewer containers is impossible unless a volume, payload, group-size or dimension bound proves it",
+     "passed": true,
+     "evidence": "Books 9 but says 'That is a search result, not a proof that 8 is impossible.'"
+    },
+    {
+     "text": "Reports slack or carton-size tolerance for tight containers",
+     "passed": true,
+     "evidence": "Each container packed with cartons +6 mm per dimension; container 5 'holds at +4 mm per dimension'."
+    }
+   ],
+   "notes": [
+    "label Q15, model sonnet"
+   ]
+  },
+  {
+   "eval_id": 2,
+   "configuration": "step1_skill",
+   "run_number": 1,
+   "result": {
+    "pass_rate": 1.0,
+    "passed": 6,
+    "failed": 0,
+    "total": 6,
+    "time_seconds": 1015.9,
+    "tokens": 102437,
+    "tool_calls": 0,
+    "errors": 0
+   },
+   "expectations": [
+    {
+     "text": "Books no more containers than the best known plan (8), counting the oversize PO",
+     "passed": true,
+     "evidence": "8 containers in allocation.csv"
+    },
+    {
+     "text": "Every PO other than the oversize one sits whole in exactly one container",
+     "passed": true,
+     "evidence": "all whole"
+    },
+    {
+     "text": "No container exceeds volume or payload",
+     "passed": true,
+     "evidence": "max fill 92.5% (split PO shares not counted)"
+    },
+    {
+     "text": "States that the oversize PO cannot ship whole in one 40' HC, with the volume reason",
+     "passed": true,
+     "evidence": "'PO 4657658WSM... 96.18 m3... 126% of a 40' HC's internal volume, so it cannot ship whole in one container in any arrangement.'"
+    },
+    {
+     "text": "Does not present a split of the oversize PO as meeting the no-split rule",
+     "passed": true,
+     "evidence": "Books 8 'assumes one PO... can be split' and states 'This split needs your sign-off (or the consignee's).'"
+    },
+    {
+     "text": "Reports slack or carton-size tolerance for tight containers",
+     "passed": true,
+     "evidence": "'+1 mm and +2 mm: all 8 containers still pack'; at +3 mm containers 2,3,4,7,8 left 0.2-2.1 m3 unloaded."
+    }
+   ],
+   "notes": [
+    "label Q08, model opus"
+   ]
+  },
+  {
+   "eval_id": 2,
+   "configuration": "step1_skill",
+   "run_number": 2,
+   "result": {
+    "pass_rate": 0.83,
+    "passed": 5,
+    "failed": 1,
+    "total": 6,
+    "time_seconds": 939.0,
+    "tokens": 108262,
+    "tool_calls": 0,
+    "errors": 0
+   },
+   "expectations": [
+    {
+     "text": "Books no more containers than the best known plan (8), counting the oversize PO",
+     "passed": false,
+     "evidence": "9 containers: 7 planned + 2 the unassigned oversize PO needs at minimum"
+    },
+    {
+     "text": "Every PO other than the oversize one sits whole in exactly one container",
+     "passed": true,
+     "evidence": "all whole"
+    },
+    {
+     "text": "No container exceeds volume or payload",
+     "passed": true,
+     "evidence": "max fill 86.0% (split PO shares not counted)"
+    },
+    {
+     "text": "States that the oversize PO cannot ship whole in one 40' HC, with the volume reason",
+     "passed": true,
+     "evidence": "'PO 4657658WSM cannot ship whole in any 40' HC. It is 96.18 m3... against 76.29 m3. This is a proof.'"
+    },
+    {
+     "text": "Does not present a split of the oversize PO as meeting the no-split rule",
+     "passed": true,
+     "evidence": "Marked UNASSIGNED; split offered as option under 'Oversized PO 4657658WSM (needs your decision)'."
+    },
+    {
+     "text": "Reports slack or carton-size tolerance for tight containers",
+     "passed": true,
+     "evidence": "Re-packed with cartons grown 3 mm per side (5 mm on grid): 'C2, C3, C5, C6 and C7 did not pack'; spare L/W/H in cm per container."
+    }
+   ],
+   "notes": [
+    "label Q12, model sonnet"
+   ]
+  }
+ ],
+ "run_summary": {
+  "packer_skill": {
+   "pass_rate": {
+    "mean": 0.9575,
+    "stddev": 0.0787,
+    "min": 0.83,
+    "max": 1.0
+   },
+   "time_seconds": {
+    "mean": 458.55,
+    "stddev": 387.2969,
+    "min": 22.1,
+    "max": 940.7
+   },
+   "tokens": {
+    "mean": 89320.0,
+    "stddev": 9951.5667,
+    "min": 78981,
+    "max": 104233
+   }
+  },
+  "step1_skill": {
+   "pass_rate": {
+    "mean": 0.9537,
+    "stddev": 0.086,
+    "min": 0.8,
+    "max": 1.0
+   },
+   "time_seconds": {
+    "mean": 2873.2875,
+    "stddev": 1859.7053,
+    "min": 783.0,
+    "max": 5061.7
+   },
+   "tokens": {
+    "mean": 124604.375,
+    "stddev": 17912.0965,
+    "min": 102437,
+    "max": 152145
+   }
+  },
+  "delta": {
+   "pass_rate": "+0.00",
+   "time_seconds": "-2414.7",
+   "tokens": "-35284"
+  }
+ },
+ "notes": [
+  "packer_skill = SKILL.md plus bundled scripts/load_plan.py; step1_skill = guidance-only skill from iteration-1 (same 8 runs, regraded).",
+  "Large 49-PO shipment: both packer runs reached the planted 8 (Sonnet in 92 s); step-1 Sonnet stopped at 9.",
+  "Reported 22-PO shipment: 3 containers in 4/4 runs for both; packer runs took 0.4 to 16 min vs 13 to 84 min.",
+  "Oversize shipment: both packer runs asked before splitting (as the skill said) but estimated the split total instead of running it, failing the count check. Fixed in the skill and verified in iteration-3: 2/2 quote the planner's split total of 8.",
+  "Claim checks (false impossibility, tolerance, oversize flag, no silent split) passed in all 16 plans: no longer discriminating after step 1.",
+  "Tokens -28%. Time comparison is confounded: 8 concurrent runs here vs 12 in iteration-1, and some runs idled on their own background searches.",
+  "Blinding was partial: 7 packer plans mention the bundled planner by name."
+ ]
+}

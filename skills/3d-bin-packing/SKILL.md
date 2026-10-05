@@ -1,11 +1,100 @@
 ---
 name: 3d-bin-packing
-description: When the user wants to pack 3D boxes into containers, optimize 3D space utilization, or solve container loading problems. Also use when the user mentions "3D packing," "container packing," "box packing," "3D bin packing problem," "cube packing," "three-dimensional packing," "cargo loading," or "space optimization." For pallet-specific loading, see pallet-loading. For container logistics, see container-loading-optimization.
+description: When the user wants to pack 3D boxes into containers, plan how many containers to book, optimize 3D space utilization, or solve container loading problems, including loads where each purchase order, customer, or stop must stay together in one container. Also use when the user mentions "3D packing," "container packing," "load plan," "keep the PO whole," "box packing," "3D bin packing problem," "cube packing," "three-dimensional packing," "cargo loading," or "space optimization." For pallet-specific loading, see pallet-loading. For container logistics, see container-loading-optimization.
 ---
 
 # 3D Bin Packing
 
 You are an expert in 3D bin packing and three-dimensional space optimization. Your goal is to help pack 3D boxes and items into containers, trucks, or bins while maximizing space utilization, minimizing number of containers, and ensuring physical stability.
+
+## Load Planning Rules
+
+These rules matter most on real shipments: many order lines, upright cartons, and groups (POs, customers, stops) that must ship together. A wrong container count costs a full container of freight, so the claims you make about feasibility have to be as reliable as the plan itself.
+
+### Read grouping constraints literally
+
+"Every PO ships whole in one container" decides **which container** each PO goes in. It says nothing about stacks, layers, or lanes. Cartons from different POs in the same container can share a stack, sit on each other, and fill each other's headroom. Commercial load planners do exactly this. Do not add a stricter rule (one PO per stack, one SKU per column, no mixing) unless the user asks for it. If a rule like that seems operationally necessary, ask, or show the plan both ways.
+
+### Separate proofs from search results
+
+Only these facts prove that a load needs more containers, or that a group cannot ship whole:
+
+- **Volume bound:** total cargo volume / container volume, rounded up.
+- **Payload bound:** total weight / payload, rounded up.
+- **Group too big:** a group's volume or weight exceeds one container.
+- **Dimension:** a carton fits in no allowed orientation.
+
+Everything else is a search result: a heuristic that did not find a fit, or a bound computed under a packing model you chose (homogeneous columns, whole layers, single-PO stacks). Report those as "my packer did not find an N-container plan", never as "N containers is impossible". A bound under your own model is not a lower bound for the real problem. Real plans beat it by mixing cartons within stacks and using headroom.
+
+When the lower bound and your best plan differ, report both, plus the gap. If a group is truly too big (one of the bounds above), say so with the number. Offer a split or bigger equipment, and still plan everything else.
+
+### Use the headroom
+
+Upright cartons stack in whole tiers, which leaves a gap under the roof. Five tiers of 49 cm cartons leave about 25 cm in a 269.5 cm high-cube. Flat cartons from other groups (rods, shelves, 10 cm boxes) fit there. Before concluding that a large group needs a container to itself, check whether small flat groups can ride on top of it.
+
+### Orientation
+
+"This side up" cartons may only rotate about the vertical axis (2 orientations). The sample code's `allow_rotation=True` tries all 6 and will tip them. Use per-item allowed orientations.
+
+### Report slack and tolerance on tight plans
+
+Master-data carton sizes are often a few millimetres off. For any container above about 85% fill, or any group above about 75% of a container, report the spare length, width, and height. Re-check the fit with every carton grown 1-3 mm per side. Recommend the tightest valid plan with its risk stated, and give a looser fallback separately. Do not swap the fallback in as the main answer without saying the tighter plan exists.
+
+### Verify every plan before reporting it
+
+Check the actual carton positions before giving a container count:
+
+- Every carton placed exactly once.
+- Inside the container walls.
+- No overlaps.
+- Upright cartons kept upright.
+- Each stacked carton supported over most of its base (70-80% or more).
+- Weight within payload.
+
+Say which checks ran. A plan that has not been checked is a draft.
+
+### Use the bundled planner for real shipments
+
+For a real carton list (order lines with dimensions, counts and weights), run the bundled planner before writing your own packer:
+
+```
+python3 scripts/load_plan.py shipment.csv --out plan/
+```
+
+It uses only the Python standard library. The input CSV needs these columns: `po, sku, length_cm, width_cm, height_cm, line_weight_kg, cartons, this_side_up`. Rename the user's columns to match. Use `--group-col` if the grouping key is something other than a PO (a customer, a stop). Container defaults are a 40' HC: 1203.5 × 235.2 × 269.5 cm and 28,620 kg. Pass `--length --width --height --payload` for other equipment or the carrier's exact box.
+
+What it does:
+- Computes the lower bound and flags any group that cannot ship whole, with the reason.
+- Assigns groups to containers.
+- Packs each container from single-SKU columns in lanes, with flat cartons riding in the headroom.
+- Re-checks every container with cartons 1, 2 and 3 mm larger.
+- Verifies every carton's position.
+
+Read `plan/report.md` and `plan/summary.json`, and build your answer from them:
+- the container count against the lower bound, and whether it is proven optimal;
+- each container's groups and fill;
+- the tolerance results;
+- any oversize group.
+
+Oversize groups are left unassigned by default. When there is one, also run the planner with `--split-oversize` into a second folder (`--out plan-split/`). Then report both plans: the count without the oversize group, and the total count with it split. That way the user decides with the real number in front of them, not an estimate. Recommend neither until they approve the split. If the planner uses more containers than the lower bound, say "best found, not proven optimal", and you may try to improve on it. If your own search finds a better plan, verify it to the same standard before you report it.
+
+### Top up booked containers (Advisor)
+
+On full-container freight the booked space is already paid for. After a plan is settled, or when the user asks what else fits, run the Advisor. It keeps the container count and each PO's container fixed, and recommends extra cartons of lines already in each container:
+
+```
+python3 scripts/load_plan.py shipment.csv --out advice/ --advise [--allocation allocation.csv]
+    [--objective volume|cartons|value] [--limits limits.csv]
+```
+
+- Without `--allocation` it plans first, then advises on that plan. Pass `--allocation` (columns `po,container`) to advise on a plan the user already has, for example one from another load planner.
+- `--objective volume` is the default and fills the most cubic metres. `cartons` maximises the number of extra cartons. `value` needs `value_per_carton` in the limits file.
+- `limits.csv` (columns `po,sku`, plus optional `max_extra`, `multiple` and `value_per_carton`) caps each line, respects case packs, and sets the value used by `--objective value`. Ask the user for limits when they matter: open-to-buy, forecast, supplier stock, case packs. Uncapped advice will happily fill a box with one bulky SKU.
+- Report the recommendations from `advice/advice.csv` as suggestions for the buyer or supplier, never as an order. For each line give the PO, the SKU, the extra cartons and the extra m³. Give the base and advised fill per container, the extra weight, and the tolerance of the fuller load, since topped-up containers are tighter.
+
+### About the code below
+
+The code further down teaches the classic algorithms. It does not handle grouping constraints or per-item orientation. The extreme-point and layer sketches can leave boxes floating. Do not take their container count as evidence that a load needs more containers.
 
 ## Initial Assessment
 
@@ -39,7 +128,8 @@ Before solving 3D bin packing problems, understand:
 
 5. **Special Requirements**
    - Multi-drop deliveries (order matters)?
-   - Item grouping by customer?
+   - Groups that must stay together (PO, customer, stop)? Together in one container, or also in separate stacks? (Default: same container only.)
+   - How exact are the carton dimensions? Any dunnage or clearance to reserve?
    - Axle weight limits?
    - Door access considerations?
 
@@ -1374,6 +1464,22 @@ Layer 3 (Top):
 - Items C001-C015: Light/fragile boxes (<30 lbs each)
 - Protected from crushing
 - Height: 48-72 inches
+
+**Container Count and Bounds:**
+
+- Lower bound: max(volume bound, payload bound), and any group that cannot ship whole, with the number that proves it
+- Containers in this plan, and the gap to the lower bound
+- If the plan uses more than the lower bound: "best found, not proven optimal", unless a proof from Load Planning Rules applies
+
+**Group Assignment (when orders must stay together):**
+
+| Container | Groups (POs) | Cartons | Volume | Weight | Fill | Spare L / W / H |
+|-----------|--------------|---------|--------|--------|------|-----------------|
+| 1 | PO-A, PO-B, PO-C | 812 | 68.9 m³ | 7,950 kg | 90.3% | 9 cm / 2 cm / 24 cm |
+
+**Tolerance:** the result of re-checking tight containers with cartons 1-3 mm larger, and a fallback plan if they fail.
+
+**Checks Run:** placement, containment, overlap, orientation, support, payload.
 
 **Item Manifest:**
 

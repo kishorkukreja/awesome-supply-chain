@@ -1,0 +1,32 @@
+Shipment: 22 POs, 55 lines, 3973 cartons, 198.8 m3. Volume lower bound: 3 containers.
+Reference: LoadViewer Solver: 3 containers (91.5% / 91.4% / 77.7%), all POs whole
+
+T1  Largest PO P01 alone: 593 cartons, 62.8 m3 (82% of one container). Lower bound: 1 container.
+    BLB          allow_rotation=False: 2 containers [48%, 34%]  violations: none
+    Layer        allow_rotation=None : 2 containers [78%, 4%]  violations: {'support<70%': 9, 'floating': 12}
+    ExtremePoint allow_rotation=False: 2 containers [51%, 32%]  violations: {'support<70%': 1}
+    BLB          allow_rotation=True : 2 containers [48%, 34%]  violations: {'tipped': 70}
+    ExtremePoint allow_rotation=True : 3 containers [47%, 29%, 6%]  violations: {'support<70%': 16, 'tipped': 10}
+
+T2  Full shipment, every PO whole (first-fit decreasing over POs; the skill's heuristic decides whether a container still fits)
+    BLB         : 6 containers [56%, 47%, 28%, 20%, 16%, 11%] + 'not packable whole': ['P01']
+    Layer       : 5 containers [53%, 45%, 37%, 32%, 11%] + 'not packable whole': ['P01']
+    ExtremePoint: 5 containers [47%, 31%, 53%, 33%, 15%] + 'not packable whole': ['P01']
+
+T3  Full shipment, PO constraint dropped
+    BLB         : 7 containers [56%, 50%, 51%, 40%, 58%, 1%, 4%], POs split: 10/22
+    Layer       : 6 containers [37%, 38%, 58%, 54%, 53%, 20%], POs split: 5/22
+    ExtremePoint: 8 containers [62%, 50%, 29%, 32%, 34%, 18%, 21%, 16%], POs split: 15/22
+
+T4  P01 with cartons +0 mm per dimension: fits whole in ONE container, 14 lanes (233.0 of 235.2 cm wide), longest lane 1195 of 1203.5 cm
+T4  P01 with cartons +1 mm per dimension: fits whole in ONE container, 14 lanes (234.4 of 235.2 cm wide), longest lane 1196 of 1203.5 cm
+T4  P01 with cartons +2 mm per dimension: lane method finds no fit
+T4  P01 with cartons +3 mm per dimension: lane method finds no fit
+
+T5  Placement auditor on the T4 plan: VALID
+    planted overlapping pairs: caught
+    planted this_side_up tipped: caught
+    planted count mismatch: caught
+    planted outside container: caught
+
+(54s)
