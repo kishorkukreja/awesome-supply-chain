@@ -126,3 +126,12 @@ Make it deterministic for a given seed, and keep it within `--time-limit`.
 - **Objectives.** The value objective gets at least as much value as the volume objective, measured with the same values. The cartons objective adds at least as many cartons as the volume objective.
 - **Large shipment.** Advising on the large planted shipment keeps 8 containers and passes the audit.
 - **Time.** Each case finishes in under 600 s.
+
+## Advisor tolerance (revision)
+
+For an advised load, `tolerance[<k>mm][<container>]` must report:
+- `base_fits`: whether all base cartons still pack when every carton is k mm larger;
+- `extras_recommended`: the extras recommended for that container at nominal size;
+- `extras_kept`: how many of those extras the Advisor can still place at +k mm.
+
+It must also keep `fits` and `unplaced` for compatibility. `extras_kept` never exceeds `extras_recommended` and never increases from +1 to +3 mm. Repacking the advised counts from scratch with the planning packer is not acceptable. That measures the packer, not tolerance.

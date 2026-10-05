@@ -4,6 +4,8 @@
     python3 load_plan.py SHIPMENT.csv --out DIR [--length 1203.5 --width 235.2 --height 269.5
         --payload 28620] [--group-col po] [--split-oversize] [--time-limit 480] [--seed 1]
         [--support 0.8] [--clearance 0]
+    python3 load_plan.py SHIPMENT.csv --out DIR --advise [--allocation ALLOC.csv]
+        [--objective volume|cartons|value] [--limits LIMITS.csv] [... the options above ...]
 
 Method: per container, cartons are built into columns (one SKU stacked to the roof, flat
 cartons riding in the headroom), columns are laid in lanes along the container length,
@@ -12,10 +14,17 @@ decreasing from the lower bound, then repaired by annealed moves and swaps until
 container packs. With --split-oversize, an oversize group's lines are assigned one by one,
 each only into a container that already holds another line of that group.
 Writes allocation.csv, placements.csv, summary.json and report.md to DIR.
+
+Advise mode keeps the containers and the group assignment (given, or planned first) and
+recommends extra cartons of lines already in each container. Per container it packs the base
+load several ways (mixed-SKU stacks of one footprint, then single-SKU columns, with leftovers
+placed in the free space), tops each up line by line into the space left above and beside it,
+and keeps the best result for the objective. It also writes advice.csv.
 Standard library only.
 """
 import argparse
 import csv
+import heapq
 import itertools
 import json
 import math
@@ -104,6 +113,7 @@ class Lane:
 class ContainerPlan:
     lanes: list
     unplaced: dict  # ctype -> count
+    loose: list = field(default_factory=list)  # (ctype, x, y, z, l, w, h) placed outside the lanes
 
     @property
     def unplaced_vol(self):
@@ -118,7 +128,7 @@ class ContainerPlan:
                         out.append((t, lane.x + x + dy, lane.y + dx, z, w, l, h))
                     else:
                         out.append((t, lane.x + x + dx, lane.y + dy, z, l, w, h))
-        return out
+        return out + self.loose
 
 
 @dataclass
@@ -220,6 +230,73 @@ def build_columns(types, H, how="narrow"):
     return cols
 
 
+def best_stack(members, H):
+    """Counts per member that fill the height best (bounded subset sum in mm)."""
+    cap = int(H * 10 + EPS)
+    reach = [None] * (cap + 1)  # height -> (member, height below)
+    reach[0] = (-1, 0)
+    for i, (t, a, b, h, n) in enumerate(members):
+        u = math.ceil(h * 10 - EPS)
+        n = min(n, cap // u)
+        if not n:
+            continue
+        used = [0] * (cap + 1)
+        for s in range(u, cap + 1):
+            if reach[s] is None and reach[s - u] is not None and used[s - u] < n:
+                reach[s] = (i, s - u)
+                used[s] = used[s - u] + 1
+    s = max(s for s in range(cap + 1) if reach[s] is not None)
+    counts = [0] * len(members)
+    while s:
+        i, s = reach[s]
+        counts[i] += 1
+    return counts
+
+
+def stack_columns(types, H, how="narrow"):
+    """Columns that mix SKUs (and groups) of one footprint class, stacked to fill the height.
+    A footprint joins a class when it fits inside the class's smallest member and covers most of its area,
+    so stacking members largest first keeps every carton fully supported."""
+    depths = {}
+    for t in types:
+        if t.upright:
+            side = min(t.dims[:2])
+            depths[side] = depths.get(side, 0) + max(t.dims[:2]) * t.count / max(1, H // t.dims[2])
+    classes = []  # [A, B, members]; member = [ctype, a, b, h, count left], a >= b
+    entries = []
+    for t in types:
+        a, b, h = best_orient(t, H, how, depths)
+        entries.append([t, max(a, b), min(a, b), h, t.count])
+    for e in sorted(entries, key=lambda e: (-e[1] * e[2], -e[1], -e[3])):
+        for c in classes:
+            last = c[2][-1]
+            if e[1] <= last[1] + EPS and e[2] <= last[2] + EPS and e[1] * e[2] >= 0.85 * c[0] * c[1]:
+                c[2].append(e)
+                break
+        else:
+            classes.append([e[1], e[2], [e]])
+    cols = []
+    for A, B, members in classes:
+        while any(m[4] for m in members):
+            counts = best_stack(members, H)
+            repeat = min(m[4] // k for m, k in zip(members, counts) if k)
+            for _ in range(repeat):
+                items, z = [], 0.0
+                for m, k in zip(members, counts):
+                    for _ in range(k):
+                        items.append((m[0], 0.0, 0.0, z, m[1], m[2], m[3]))
+                        z += m[3]
+                cols.append(Column(A, B, z, H - z, A, items))
+            for m, k in zip(members, counts):
+                m[4] -= k * repeat
+    for c in sorted(cols, key=lambda c: c.l * c.w):
+        t = c.items[0][0]
+        if not c.carrying and all(it[0] is t for it in c.items) and place_on_tops(t, len(c.items), cols, skip=c, whole=True):
+            c.items = []
+            cols.remove(c)
+    return cols
+
+
 def fill_lane(items, d, length, tol):
     low = d - tol - EPS
     cand = []
@@ -288,16 +365,21 @@ class Policy:
     deep: bool  # lane order: deepest good lane rather than most efficient
     tol: float  # how much shallower than its lane a column may be in the first pass
     noise: float  # chance of taking a runner-up lane
+    mixed: bool = False  # stack different SKUs of one footprint in a column (advise mode)
 
 
 POLICIES = [Policy(o, d, t, 0.0) for t in (3.0, math.inf, 1.5, 6.0) for d in (False, True)
             for o in ("match", "narrow", "height")]
+MIXED_POLICIES = [Policy(o, d, t, 0.0, True) for t in (3.0, math.inf, 1.5, 6.0) for d in (False, True)
+                  for o in ("match", "narrow", "height")]
 
 
-def policy(attempt, rng):
-    if attempt < len(POLICIES):
-        return POLICIES[attempt]
-    return Policy(rng.choice(("match", "narrow", "height")), rng.random() < 0.5, rng.choice((1.5, 3.0, 6.0, math.inf)), 0.3)
+def policy(attempt, rng, mixed=False):
+    fixed = MIXED_POLICIES if mixed else POLICIES
+    if attempt < len(fixed):
+        return fixed[attempt]
+    return Policy(rng.choice(("match", "narrow", "height")), rng.random() < 0.5, rng.choice((1.5, 3.0, 6.0, math.inf)), 0.3,
+                  mixed)
 
 
 def merged_surfaces(lanes, H):
@@ -323,31 +405,239 @@ def merged_surfaces(lanes, H):
     return out
 
 
-def pack_container(types, box, seed=1, tries=1):
+def pack_one(types, box, pol, rng):
+    cols = (stack_columns if pol.mixed else build_columns)(types, box.H, pol.orient)
+    lanes, left = pack_floor(cols, box, rng, pol)
+    placed = [c for lane in lanes for c, _, _ in lane.cols]
+    if left:
+        placed += merged_surfaces(lanes, box.H)
+    loose = {}
+    for c in left:
+        for it in c.items:
+            loose[it[0]] = loose.get(it[0], 0) + 1
+    unplaced = {}
+    for t, n in loose.items():
+        n -= place_on_tops(t, n, placed)
+        if n:
+            unplaced[t] = n
+    return ContainerPlan(lanes, unplaced)
+
+
+def pack_container(types, box, seed=1, tries=1, mixed=False):
     """Stage 2: pack the given carton types into one container. Best of `tries` attempts."""
     best = None
     for attempt in range(tries):
         rng = random.Random(seed * 7919 + attempt)
-        pol = policy(attempt, rng)
-        cols = build_columns(types, box.H, pol.orient)
-        lanes, left = pack_floor(cols, box, rng, pol)
-        placed = [c for lane in lanes for c, _, _ in lane.cols]
-        if left:
-            placed += merged_surfaces(lanes, box.H)
-        loose = {}
-        for c in left:
-            for it in c.items:
-                loose[it[0]] = loose.get(it[0], 0) + 1
-        unplaced = {}
-        for t, n in loose.items():
-            n -= place_on_tops(t, n, placed)
-            if n:
-                unplaced[t] = n
-        plan = ContainerPlan(lanes, unplaced)
+        plan = pack_one(types, box, policy(attempt, rng, mixed), rng)
         if best is None or plan.unplaced_vol < best.unplaced_vol:
             best = plan
-        if not unplaced:
+        if not plan.unplaced:
             break
+    return best
+
+
+class Space:
+    """The load as a height map, for placing cartons one at a time into whatever space is left.
+    A carton rests on the floor or on tops at one height with at least the support ratio, and is never
+    tucked under another carton, so only cartons with some top still exposed matter for a new one."""
+    CELL = 25.0
+
+    def __init__(self, box, placements):
+        self.box = box
+        self.items = []  # (ctype, x, y, z, l, w, h)
+        self.cover = []  # area of each item's top covered by cartons resting on it
+        self.under = []  # per item: [(supporting item, overlap area)]
+        self.grid = {}  # cell -> set of exposed item indices
+        for p in placements:
+            self.add(p)
+
+    def cells(self, x, y, l, w):
+        c = self.CELL
+        return [(i, j) for i in range(int(x // c), int((x + l - EPS) // c) + 1)
+                for j in range(int(y // c), int((y + w - EPS) // c) + 1)]
+
+    def near(self, x, y, l, w):
+        found = set()
+        for cell in self.cells(x, y, l, w):
+            found |= self.grid.get(cell, set())
+        return found
+
+    def overlaps(self, x, y, l, w):
+        """(item, overlap area) for exposed items under the rectangle."""
+        out = []
+        for k in self.near(x, y, l, w):
+            _, bx, by, _, bl, bw, _ = self.items[k]
+            ox = min(x + l, bx + bl) - max(x, bx)
+            oy = min(y + w, by + bw) - max(y, by)
+            if ox > EPS and oy > EPS:
+                out.append((k, ox * oy))
+        return out
+
+    def fit(self, x, y, l, w, h):
+        """Height a carton of these extents would rest at, or None if it cannot go there."""
+        box = self.box
+        if x < -EPS or y < -EPS or x + l > box.L + EPS or y + w > box.W + EPS:
+            return None
+        z, area = 0.0, l * w
+        for k, a in self.overlaps(x, y, l, w):
+            top = self.items[k][3] + self.items[k][6]
+            if top > z + EPS:
+                z, area = top, a
+            elif top > z - EPS:
+                area += a
+        if z + h > box.H + EPS or area < box.support * l * w - EPS:
+            return None
+        return z
+
+    def add(self, p):
+        t, x, y, z, l, w, h = p
+        k = len(self.items)
+        under = [(j, a) for j, a in self.overlaps(x, y, l, w)
+                 if abs(self.items[j][3] + self.items[j][6] - z) < EPS] if z > EPS else []
+        self.items.append(p)
+        self.cover.append(0.0)
+        self.under.append(under)
+        for cell in self.cells(x, y, l, w):
+            self.grid.setdefault(cell, set()).add(k)
+        for j, a in under:
+            self.cover[j] += a
+            if self.cover[j] >= self.items[j][4] * self.items[j][5] * (1 - 1e-9):
+                self.expose(j, False)
+
+    def pop(self):
+        k = len(self.items) - 1
+        _, x, y, _, l, w, _ = self.items[k]
+        for cell in self.cells(x, y, l, w):
+            self.grid[cell].discard(k)
+        for j, a in self.under[k]:
+            if self.cover[j] >= self.items[j][4] * self.items[j][5] * (1 - 1e-9):
+                self.expose(j, True)
+            self.cover[j] -= a
+        self.items.pop()
+        self.cover.pop()
+        self.under.pop()
+
+    def expose(self, j, on):
+        _, x, y, _, l, w, _ = self.items[j]
+        for cell in self.cells(x, y, l, w):
+            if on:
+                self.grid.setdefault(cell, set()).add(j)
+            else:
+                self.grid[cell].discard(j)
+
+    def exposed(self):
+        return {k for s in self.grid.values() for k in s}
+
+    def anchors(self, k, l, w):
+        """Corner positions for an l x w footprint on top of, or beside, item k."""
+        _, x, y, _, bl, bw, _ = self.items[k]
+        xe, ye = x + bl, y + bw
+        return [(x, y), (xe - l, y), (x, ye - w), (xe - l, ye - w), (xe, y), (xe, ye - w), (x, ye), (xe - l, ye),
+                (x - l, y), (x, y - w), (x, self.box.W - w), (self.box.L - l, y)]
+
+    def rank(self, x, y, z, l, w, h):
+        """Order of open spots: lowest first, then nearest the front wall and the side wall."""
+        return (round(z, 6), round(x, 4), round(y, 4))
+
+    def place(self, t, n, whole=False):
+        """Put up to n cartons of t, each at the best-ranked open spot. With whole=True, all n or none."""
+        if n <= 0:
+            return 0
+        heap, seen = [], set()
+
+        def push(k):
+            for l, w, h in t.orients:
+                for x, y in (self.anchors(k, l, w) if k is not None else [(0.0, 0.0)]):
+                    key = (round(x, 4), round(y, 4), l, w, h)
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    z = self.fit(x, y, l, w, h)
+                    if z is not None:
+                        heapq.heappush(heap, (self.rank(x, y, z, l, w, h), x, y, l, w, h))
+
+        push(None)
+        for k in sorted(self.exposed()):
+            push(k)
+        placed = 0
+        while placed < n and heap:
+            r, x, y, l, w, h = heapq.heappop(heap)
+            z = self.fit(x, y, l, w, h)
+            if z is None:
+                continue
+            if self.rank(x, y, z, l, w, h) != r:
+                heapq.heappush(heap, (self.rank(x, y, z, l, w, h), x, y, l, w, h))
+                continue
+            self.add((t, x, y, z, l, w, h))
+            placed += 1
+            seen.clear()
+            push(len(self.items) - 1)
+        if whole and placed < n:
+            for _ in range(placed):
+                self.pop()
+            return 0
+        return placed
+
+
+def lift_flat(placements, box):
+    """Take every flat carton (and whatever rests on one) off the load. Returns (kept, lifted counts)."""
+    flat = {p[0] for p in placements if min(o[2] for o in p[0].orients) <= box.H / 8}
+    lifted = [p for p in placements if p[0] in flat]
+    tops = {}
+    for p in lifted:
+        tops.setdefault(round(p[3] + p[6], 4), []).append(p)
+    kept = []
+    for p in sorted((p for p in placements if p[0] not in flat), key=lambda p: p[3]):
+        t, x, y, z, l, w, h = p
+        if any(x < a + al and a < x + l and y < b + bw and b < y + w for _, a, b, _, al, bw, _ in tops.get(round(z, 4), [])):
+            lifted.append(p)
+            tops.setdefault(round(z + h, 4), []).append(p)
+        else:
+            kept.append(p)
+    counts = {}
+    for p in lifted:
+        counts[p[0]] = counts.get(p[0], 0) + 1
+    return kept, counts
+
+
+def place_leftovers(placements, unplaced, box):
+    """Place unplaced cartons in the free space, largest first. If some still do not fit, lift the flat
+    cartons off the column tops and place everything loose again, largest first."""
+    kept, lifted = lift_flat(placements, box)
+    for t, n in unplaced.items():
+        lifted[t] = lifted.get(t, 0) + n
+    best = None
+    for base, todo in ((placements, unplaced), (kept, lifted)):
+        space = Space(box, base)
+        left = {}
+        # Narrowest footprint last: wide cartons need the few wide surfaces, rods fit almost anywhere.
+        for t, n in sorted(todo.items(), key=lambda e: (-min(min(o[:2]) for o in e[0].orients), -e[0].vol)):
+            k = space.place(t, n)
+            if k < n:
+                left[t] = n - k
+        plan = ContainerPlan([], left, space.items)
+        if not left:
+            return plan
+        if best is None or plan.unplaced_vol < best.unplaced_vol:
+            best = plan
+    return best
+
+
+def pack_complete(types, box, seed=1, tries=16):
+    """Advise-mode stage 2: the column and lane packer (mixed stacks first, then single-SKU columns),
+    with any leftovers placed in the remaining space. Returns the first plan that places everything,
+    else the one leaving the least volume."""
+    best = None
+    for mixed in (True, False):
+        for attempt in range(tries):
+            rng = random.Random(seed * 7919 + attempt)
+            plan = pack_one(types, box, policy(attempt, rng, mixed), rng)
+            if plan.unplaced:
+                plan = place_leftovers(plan.placements(), plan.unplaced, box)
+            if not plan.unplaced:
+                return plan
+            if best is None or plan.unplaced_vol < best.unplaced_vol:
+                best = plan
     return best
 
 
@@ -540,10 +830,229 @@ def self_check(plans, lines, box, placed_pos):
     return checks
 
 
+# ---------------------------------------------------------------- advisor: top up booked containers
+
+@dataclass(frozen=True)
+class LineRule:
+    max_extra: float = math.inf
+    multiple: int = 1
+    value: float = 0.0
+
+
+def read_limits(path):
+    rules = {}
+    for r in csv.DictReader(open(path, newline="")):
+        cap = (r.get("max_extra") or "").strip()
+        mult = (r.get("multiple") or "").strip()
+        value = (r.get("value_per_carton") or "").strip()
+        rules[(r["po"].strip(), r["sku"].strip())] = LineRule(int(float(cap)) if cap else math.inf,
+                                                              max(1, int(float(mult))) if mult else 1,
+                                                              float(value) if value else 0.0)
+    return rules
+
+
+def read_allocation(path, by_group):
+    """po -> container number. Every group must be listed once; UNASSIGNED leaves it out."""
+    where = {}
+    for r in csv.DictReader(open(path, newline="")):
+        where.setdefault(r["po"].strip(), set()).add(r["container"].strip())
+    problems = [f"{g} is not in the allocation" for g in by_group if g not in where]
+    problems += [f"{g} is in the allocation but not the shipment" for g in where if g not in by_group]
+    problems += [f"{g} is in several containers {sorted(cs)}; advise needs one per group"
+                 for g, cs in where.items() if len(cs) > 1]
+    if problems:
+        sys.exit("allocation: " + "; ".join(problems[:5]))
+    containers = {}
+    for g, (c,) in where.items():
+        if c.upper() != "UNASSIGNED":
+            containers.setdefault(int(c), set()).add(g)
+    return dict(sorted(containers.items()))
+
+
+def with_count(t, n):
+    return CartonType(t.po, t.group, t.sku, t.dims, t.kg, n, t.upright)
+
+
+def layout_key(placements):
+    return hash(tuple(sorted((t.sku, t.po, round(x, 2), round(y, 2), round(z, 2)) for t, x, y, z, *_ in placements)))
+
+
+def base_layouts(types, box, seed, want, deadline):
+    """Distinct layouts that place every base carton: the fixed stage-2 policies first (mixed stacks, then
+    single-SKU columns), then randomised ones. A column style that keeps failing is dropped."""
+    out, seen, misses = [], set(), {True: 0, False: 0}
+    attempt = 0
+    while len(out) < want and attempt < 6 * want and time.time() < deadline:
+        for mixed in (True, False):
+            if misses[mixed] >= 6 and misses[mixed] > 2 * len(out) or len(out) >= want:
+                continue
+            rng = random.Random(seed * 7919 + attempt)
+            plan = pack_one(types, box, policy(attempt, rng, mixed), rng)
+            if plan.unplaced:
+                plan = place_leftovers(plan.placements(), plan.unplaced, box)
+            if plan.unplaced:
+                misses[mixed] += 1
+                continue
+            pl = plan.placements()
+            key = layout_key(pl)
+            if key not in seen:
+                seen.add(key)
+                out.append(pl)
+        attempt += 1
+    return out
+
+
+def fill_orders(types, rules):
+    """Line orders for topping up. The same orders serve every objective, so each objective chooses
+    from the same candidates and is never beaten on its own measure by another objective."""
+    def side(t):
+        return min(min(o[:2]) for o in t.orients)
+    orders = [sorted(types, key=lambda t: (-side(t), -t.vol)),  # wide cartons need the few wide spots
+              sorted(types, key=lambda t: -t.vol),
+              sorted(types, key=lambda t: t.vol)]
+    if any(rules.get((t.po, t.sku), LineRule()).value for t in types):
+        orders.append(sorted(types, key=lambda t: (-rules.get((t.po, t.sku), LineRule()).value / t.vol, -t.vol)))
+    return orders
+
+
+def top_up(base, order, box, rules, objective):
+    """Add extra cartons line by line into the space left above and beside the base load."""
+    space = Space(box, base)
+    kg_room = box.payload - sum(p[0].kg for p in base)
+    extra = {}
+    for t in order:
+        rule = rules.get((t.po, t.sku), LineRule())
+        if objective == "value" and rule.value <= 0:
+            continue
+        cap = rule.max_extra
+        if t.kg > 0:
+            cap = min(cap, int((kg_room + EPS) // t.kg))
+        cap = int(min(cap, 10 ** 6))
+        cap -= cap % rule.multiple
+        k = space.place(t, cap)
+        for _ in range(k % rule.multiple):
+            # The newest cartons carry nothing yet, so they can come off again.
+            space.pop()
+        k -= k % rule.multiple
+        if k:
+            extra[t] = k
+            kg_room -= k * t.kg
+    return space.items, extra
+
+
+def score(extra, rules, objective):
+    m3 = sum(t.vol * k for t, k in extra.items()) / 1e6
+    if objective == "cartons":
+        return (sum(extra.values()), m3)
+    if objective == "value":
+        return (sum(rules.get((t.po, t.sku), LineRule()).value * k for t, k in extra.items()), m3)
+    return (m3, sum(extra.values()))
+
+
+def advise_container(types, box, rules, objective, seed, deadline, fallback=None, layouts=10, keep=3):
+    """Best (placements, extras) for one container: several base layouts are screened with one top-up
+    order, then the most promising get every order."""
+    bases = base_layouts(types, box, seed, layouts, deadline)
+    if not bases and fallback is not None:
+        bases = [fallback]
+    if not bases:
+        return None
+    orders = fill_orders(types, rules)
+    tried = []
+    for base in bases:
+        if time.time() > deadline and tried:
+            break
+        pl, extra = top_up(base, orders[0], box, rules, objective)
+        tried.append((sum(t.vol * k for t, k in extra.items()), len(tried), base, (pl, extra)))
+    tried.sort(key=lambda e: (-e[0], e[1]))
+    cands = [e[3] for e in tried]
+    for _, _, base, _ in tried[:keep]:
+        for order in orders[1:]:
+            if time.time() > deadline:
+                break
+            cands.append(top_up(base, order, box, rules, objective))
+    return max(cands, key=lambda c: score(c[1], rules, objective))
+
+
+def load_totals(placements, box):
+    rows = []
+    for i, pl in placements.items():
+        m3 = sum(t.vol for t, *_ in pl) / 1e6
+        rows.append({"container": i, "cartons": len(pl), "m3": round(m3, 3), "fill": round(m3 / box.m3, 4),
+                     "kg": round(sum(t.kg for t, *_ in pl), 1)})
+    m3 = sum(r["m3"] for r in rows)
+    return {"containers": rows, "cartons": sum(r["cartons"] for r in rows), "m3": round(m3, 3),
+            "fill": round(m3 / (box.m3 * len(rows)), 4) if rows else 0.0, "kg": round(sum(r["kg"] for r in rows), 1)}
+
+
+def advise_shipment(args):
+    t0 = time.time()
+    deadline = t0 + args.time_limit
+    box, lines, by_group, groups, oversize, families, lb = load_shipment(args)
+    rules = read_limits(args.limits) if args.limits else {}
+    if args.objective == "value" and not args.limits:
+        sys.exit("--objective value needs --limits with value_per_carton")
+    if args.allocation:
+        loads = {i: [t for g in sorted(gs) for t in by_group[g]] for i, gs in read_allocation(args.allocation, by_group).items()}
+        groups = {g: by_group[g] for ts in loads.values() for g in {t.group for t in ts}}
+        fallbacks, source = {}, "given"
+    else:
+        final = assign_groups(args, box, groups, families, lb, t0)
+        loads = {i: [t for g in sorted(members) for t in groups[g]] for i, (members, _) in final.items()}
+        fallbacks = {i: plan.placements() for i, (_, plan) in final.items() if not plan.unplaced}
+        source = "planned"
+    lb = lower_bound(groups, box) if args.allocation else lb
+
+    # Leave a tenth of the time for the tolerance re-packs and the outputs.
+    budget_end = deadline - 0.1 * args.time_limit
+    base_pl, placements, extras, unplaced = {}, {}, {}, {}
+    todo = list(loads.items())
+    for n, (i, types) in enumerate(todo):
+        share = (budget_end - time.time()) / (len(todo) - n)
+        res = advise_container(types, box, rules, args.objective, args.seed, time.time() + share, fallbacks.get(i))
+        if res is None:
+            plan = pack_complete(types, box, args.seed, 4)
+            placements[i], extras[i], unplaced[i] = plan.placements(), {}, plan.unplaced
+            base_pl[i] = placements[i]
+            continue
+        placements[i], extras[i] = res
+        base_pl[i] = placements[i][:len(placements[i]) - sum(extras[i].values())]
+        unplaced[i] = {}
+
+    added = {}
+    for ex in extras.values():
+        for t, k in ex.items():
+            added[(t.po, t.sku)] = added.get((t.po, t.sku), 0) + k
+    advised_lines = [with_count(t, t.count + added.get((t.po, t.sku), 0)) for t in lines]
+    advised_loads = {i: [with_count(t, t.count + extras[i].get(t, 0)) for t in types] for i, types in loads.items()}
+    tolerance = tolerance_check(advised_loads, box, args.seed)
+    checks = self_check(placements, advised_lines, box, {t.po for ts in loads.values() for t in ts})
+    final = {i: ({t.group for t in types}, ContainerPlan([], unplaced[i], placements[i])) for i, types in loads.items()}
+
+    rows = []
+    for t in lines:
+        homes = [i for i, types in loads.items() if any(u.po == t.po and u.sku == t.sku for u in types)]
+        for i in homes or ["UNASSIGNED"]:
+            part = [u for u in loads.get(i, []) if u.po == t.po and u.sku == t.sku]
+            base_n = sum(u.count for u in part) if part else t.count
+            k = sum(extras[i].get(u, 0) for u in part)
+            rows.append({"po": t.po, "sku": t.sku, "container": i, "base_cartons": base_n, "extra_cartons": k,
+                         "new_cartons": base_n + k, "extra_m3": round(k * t.vol / 1e6, 4), "extra_kg": round(k * t.kg, 2)})
+    base, advised = load_totals(base_pl, box), load_totals(placements, box)
+    advice = {"objective": args.objective, "allocation_source": source, "base": base, "advised": advised,
+              "extra_cartons": sum(r["extra_cartons"] for r in rows),
+              "extra_m3": round(sum(r["extra_m3"] for r in rows), 3),
+              "extra_kg": round(sum(r["extra_kg"] for r in rows), 1)}
+    if args.objective == "value" or rules:
+        advice["extra_value"] = round(sum(r["extra_cartons"] * rules.get((r["po"], r["sku"]), LineRule()).value
+                                          for r in rows), 2)
+    advice["lines"] = rows
+    return box, lines, by_group, groups, oversize, lb, final, placements, tolerance, checks, time.time() - t0, advice
+
+
 # ---------------------------------------------------------------- main
 
-def plan_shipment(args):
-    t0 = time.time()
+def load_shipment(args):
     box = Box(args.length - args.clearance, args.width - args.clearance, args.height - args.clearance,
               args.payload, args.support)
     lines = read_shipment(args.shipment, args.group_col)
@@ -564,7 +1073,11 @@ def plan_shipment(args):
             families[g] = need
     # Bound over all cargo being placed, split parts included. Summing per-family ceilings would overstate it.
     lb = max(lower_bound(groups, box), max(families.values(), default=0))
+    return box, lines, by_group, groups, oversize, families, lb
 
+
+def assign_groups(args, box, groups, families, lb, t0):
+    """Stage 1 plus a final, harder stage 2 per container. Returns {container: (groups, plan)}."""
     deadline = t0 + args.time_limit
     planner = Planner(groups, box, args.seed, families)
     n = max(lb, 1) if groups else 0
@@ -581,21 +1094,33 @@ def plan_shipment(args):
         types = [t for g in sorted(members) for t in groups[g]]
         tries = max(16, planner.cache.get(frozenset(members), (0, 0))[1])
         final[i] = (members, pack_container(types, box, args.seed, tries))
+    return final
+
+
+def tolerance_check(loads, box, seed):
+    """loads: container -> carton types. Re-packs each with every carton grown 1, 2 and 3 mm."""
     tolerance = {}
     for mm in (1, 2, 3):
         res = {}
-        for i, (members, _) in final.items():
-            grown = [t.grown(mm / 10) for g in sorted(members) for t in groups[g]]
-            p = pack_container(grown, box, args.seed, 20)
+        for i, types in loads.items():
+            p = pack_container([t.grown(mm / 10) for t in types], box, seed, 20)
             res[str(i)] = {"fits": not p.unplaced, "unplaced": sum(p.unplaced.values())}
         tolerance[f"{mm}mm"] = res
+    return tolerance
 
+
+def plan_shipment(args):
+    t0 = time.time()
+    box, lines, by_group, groups, oversize, families, lb = load_shipment(args)
+    final = assign_groups(args, box, groups, families, lb, t0)
+    tolerance = tolerance_check({i: [t for g in sorted(members) for t in groups[g]] for i, (members, _) in final.items()},
+                                box, args.seed)
     placements = {i: plan.placements() for i, (_, plan) in final.items()}
     checks = self_check(placements, lines, box, {t.po for ts in groups.values() for t in ts})
     return box, lines, by_group, groups, oversize, lb, final, placements, tolerance, checks, time.time() - t0
 
 
-def write_outputs(out, args, box, by_group, groups, oversize, lb, final, placements, tolerance, checks, secs):
+def write_outputs(out, args, box, by_group, groups, oversize, lb, final, placements, tolerance, checks, secs, advice=None):
     out.mkdir(parents=True, exist_ok=True)
     where = {}
     for i, (members, _) in final.items():
@@ -629,8 +1154,19 @@ def write_outputs(out, args, box, by_group, groups, oversize, lb, final, placeme
                "oversize_groups": oversize, "split_oversize": args.split_oversize,
                "containers_detail": detail, "tolerance": tolerance, "checks": checks,
                "checks_passed": ok, "seconds": round(secs, 1)}
+    text = report(summary, box, args)
+    if advice is not None:
+        advice = dict(advice)
+        rows = advice.pop("lines")
+        with open(out / "advice.csv", "w", newline="") as f:
+            w = csv.DictWriter(f, fieldnames=list(rows[0]) if rows else ["po", "sku", "container", "base_cartons",
+                                                                         "extra_cartons", "new_cartons", "extra_m3", "extra_kg"])
+            w.writeheader()
+            w.writerows(rows)
+        summary["advice"] = advice
+        text += advisor_report(advice, rows)
     (out / "summary.json").write_text(json.dumps(summary, indent=1))
-    (out / "report.md").write_text(report(summary, box, args))
+    (out / "report.md").write_text(text)
     return ok
 
 
@@ -683,6 +1219,33 @@ def report(s, box, args):
     return "\n".join(out) + "\n"
 
 
+def advisor_report(a, rows):
+    b, v = a["base"], a["advised"]
+    out = ["", "**Advisor:** the same containers and group assignment, topped up with extra cartons of lines already "
+           f"in each container (objective: {a['objective']}, allocation {a['allocation_source']}). "
+           "The tables above describe the advised load.", "",
+           "| Container | Base fill | Advised fill | Base m³ | Advised m³ | Base kg | Advised kg |",
+           "|-----------|-----------|--------------|---------|------------|---------|------------|"]
+    for cb, cv in zip(b["containers"], v["containers"]):
+        out.append(f"| {cb['container']} | {100 * cb['fill']:.1f}% | {100 * cv['fill']:.1f}% | {cb['m3']:.1f} | "
+                   f"{cv['m3']:.1f} | {cb['kg']:,.0f} | {cv['kg']:,.0f} |")
+    out.append(f"| Total | {100 * b['fill']:.1f}% | {100 * v['fill']:.1f}% | {b['m3']:.1f} | {v['m3']:.1f} | "
+               f"{b['kg']:,.0f} | {v['kg']:,.0f} |")
+    out += ["", f"Extra: {a['extra_cartons']:,} cartons, {a['extra_m3']:.2f} m³, {a['extra_kg']:,.0f} kg"
+            + (f", value {a['extra_value']:,.2f}" if "extra_value" in a else "") + ".", ""]
+    grown = sorted((r for r in rows if r["extra_cartons"]), key=lambda r: -r["extra_m3"])
+    if grown:
+        out += ["| PO | SKU | Container | Base | Extra | New | Extra m³ | Extra kg |",
+                "|----|-----|-----------|------|-------|-----|----------|----------|"]
+        out += [f"| {r['po']} | {r['sku']} | {r['container']} | {r['base_cartons']} | {r['extra_cartons']} | "
+                f"{r['new_cartons']} | {r['extra_m3']:.3f} | {r['extra_kg']:,.1f} |" for r in grown]
+    else:
+        out.append("No line can grow without breaking a rule.")
+    out += ["", "Extras are checked like the base load: every carton placed, upright kept, support and payload held. "
+            "Order quantities are a recommendation; confirm them with the supplier before booking changes."]
+    return "\n".join(out) + "\n"
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("shipment")
@@ -697,12 +1260,25 @@ def main():
     ap.add_argument("--seed", type=int, default=1)
     ap.add_argument("--support", type=float, default=0.8)
     ap.add_argument("--clearance", type=float, default=0.0)
+    ap.add_argument("--advise", action="store_true", help="top up the booked containers with extra cartons")
+    ap.add_argument("--allocation", help="advise: po,container CSV to keep fixed (default: plan first)")
+    ap.add_argument("--objective", choices=("volume", "cartons", "value"), default="volume")
+    ap.add_argument("--limits", help="advise: po,sku,max_extra,multiple,value_per_carton CSV")
     args = ap.parse_args()
-    box, lines, by_group, groups, oversize, lb, final, placements, tolerance, checks, secs = plan_shipment(args)
+    if not args.advise and (args.allocation or args.limits or args.objective != "volume"):
+        ap.error("--allocation, --limits and --objective apply only with --advise")
+    if args.advise:
+        *res, advice = advise_shipment(args)
+    else:
+        res, advice = plan_shipment(args), None
+    box, lines, by_group, groups, oversize, lb, final, placements, tolerance, checks, secs = res
     ok = write_outputs(pathlib.Path(args.out), args, box, by_group, groups, oversize, lb, final, placements,
-                       tolerance, checks, secs)
+                       tolerance, checks, secs, advice)
     print(f"containers {len(final)}, lower bound {lb}, oversize {len(oversize)}, checks {'passed' if ok else 'FAILED'},"
           f" {secs:.0f}s, outputs in {args.out}")
+    if advice:
+        print(f"advised fill {100 * advice['base']['fill']:.1f}% -> {100 * advice['advised']['fill']:.1f}%, "
+              f"+{advice['extra_cartons']} cartons, +{advice['extra_m3']:.2f} m3")
     if not ok:
         print(json.dumps({k: v for k, v in checks.items() if k != "min_support" and not v["ok"]}, indent=1),
               file=sys.stderr)

@@ -66,8 +66,24 @@ def common_checks(shipment, out, proc, secs, containers, fixed_alloc=None):
     b, v = adv.get("base", {}), adv.get("advised", {})
     if v.get("fill", 0) + 1e-9 < b.get("fill", 0):
         fails.append(f"advised fill {v.get('fill')} below base {b.get('fill')}")
-    if not all(k in s.get("tolerance", {}) for k in ("1mm", "2mm", "3mm")):
+    tol = s.get("tolerance", {})
+    if not all(k in tol for k in ("1mm", "2mm", "3mm")):
         fails.append("tolerance missing for advised load")
+    else:
+        # For an advised load, tolerance answers: with cartons k mm larger, do the base cartons still fit,
+        # and how many of the recommended extras survive? Survivors can only shrink as cartons grow.
+        for c in tol["1mm"]:
+            kept = []
+            for k in ("1mm", "2mm", "3mm"):
+                r = tol[k].get(c, {})
+                if not {"base_fits", "extras_recommended", "extras_kept"} <= set(r):
+                    fails.append(f"tolerance {k} container {c} lacks base_fits/extras_recommended/extras_kept")
+                    break
+                if r["extras_kept"] > r["extras_recommended"]:
+                    fails.append(f"tolerance {k} container {c} keeps more extras than recommended")
+                kept.append(r["extras_kept"])
+            if len(kept) == 3 and not kept[0] >= kept[1] >= kept[2]:
+                fails.append(f"container {c} extras kept not non-increasing with growth: {kept}")
     if secs > LIMIT_S:
         fails.append(f"took {secs:.0f}s")
 
