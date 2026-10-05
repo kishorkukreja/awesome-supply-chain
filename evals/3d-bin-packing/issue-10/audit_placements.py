@@ -1,6 +1,9 @@
 """Independent check of a 3D placement dump against the shipment, in real cm.
 
-Usage: python3 audit_placements.py shipment.csv placements.json
+Usage: python3 audit_placements.py shipment.csv placements.json [PO1,PO2]
+
+The optional third argument lists POs that may span containers (an oversize PO
+the user agreed to split). Every other PO must sit in one container.
 
 placements.json is a list of {"c", "po", "sku", "pos": [x, y, z], "size": [l, w, h]}
 in cm, z up. Checks carton counts per line, containment, overlap, upright
@@ -27,7 +30,8 @@ for p in pl:
     if up and abs(p['size'][2] - h) > 0.51: bad['this_side_up tipped'] += 1
     x, y, z = p['pos']; l, w, hh = p['size']
     if x < -1e-6 or y < -1e-6 or z < -1e-6 or x + l > L + 1e-6 or y + w > W + 1e-6 or z + hh > H + 1e-6: bad['outside container (real cm)'] += 1
-bad['POs split'] = sum(1 for s in po_cont.values() if len(s) > 1)
+allowed_split = set(sys.argv[3].split(',')) if len(sys.argv) > 3 and sys.argv[3] else set()
+bad['POs split'] = sum(1 for po, s in po_cont.items() if len(s) > 1 and po not in allowed_split)
 minsup = 1.0
 for c, its in by_c.items():
     its.sort(key=lambda p: p['pos'][0])

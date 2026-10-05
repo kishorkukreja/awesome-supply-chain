@@ -89,7 +89,8 @@ def run(name, shipment, expect, extra):
         w.writeheader()
         w.writerows(r for r in rows if r["po"] in placed_pos)
     (out / "audit.json").write_text(json.dumps(placed))
-    audit = subprocess.run([sys.executable, str(AUDIT), str(sub), str(out / "audit.json")],
+    allowed = ",".join(sorted(oversize)) if split_ok else ""
+    audit = subprocess.run([sys.executable, str(AUDIT), str(sub), str(out / "audit.json"), allowed],
                            capture_output=True, text=True).stdout.strip()
     if not audit.endswith("VALID") or "INVALID" in audit:
         fails.append("audit: " + audit.splitlines()[-1])
