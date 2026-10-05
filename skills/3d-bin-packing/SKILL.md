@@ -76,7 +76,7 @@ Read `plan/report.md` and `plan/summary.json`, and build your answer from them:
 - the tolerance results;
 - any oversize group.
 
-Oversize groups are left unassigned by default. Ask the user before re-running with `--split-oversize`. If the planner uses more containers than the lower bound, say "best found, not proven optimal", and you may try to improve on it. If your own search finds a better plan, verify it to the same standard before you report it.
+Oversize groups are left unassigned by default. When there is one, also run the planner with `--split-oversize` into a second folder (`--out plan-split/`). Then report both plans: the count without the oversize group, and the total count with it split. That way the user decides with the real number in front of them, not an estimate. Recommend neither until they approve the split. If the planner uses more containers than the lower bound, say "best found, not proven optimal", and you may try to improve on it. If your own search finds a better plan, verify it to the same standard before you report it.
 
 ### About the code below
 

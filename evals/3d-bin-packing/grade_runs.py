@@ -112,6 +112,10 @@ def main():
             if (src / f).exists():
                 shutil.copy(src / f, rd / "outputs" / f)
         exps = scripted(ev, vol, kg, read_allocation(src / "allocation.csv"))
+        quoted = judge.get(run["label"], {}).get("quotes_split_total")
+        if ev.get("oversize_po") and quoted is not None and not exps[0]["passed"] and "unassigned" in exps[0]["evidence"]:
+            # Leaving the PO unassigned while quoting a planned split total that hits the best known count is a pass.
+            exps[0] = {**exps[0], "passed": bool(quoted[0]), "evidence": exps[0]["evidence"] + "; quoted split plan: " + quoted[1]}
         kind = "oversize" if ev.get("oversize_po") else "feasible"
         for key, text in JUDGED[kind]:
             verdict = judge.get(run["label"], {}).get(key)
