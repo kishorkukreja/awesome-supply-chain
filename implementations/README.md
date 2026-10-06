@@ -41,6 +41,17 @@ Curated collection of open-source implementations, GitHub repositories, and prac
   - Safety stock optimization
 - **Documentation**: Comprehensive tutorials and examples
 
+### Awesome China Sourcing (assassinationss)
+
+**Description**: Open-source supplier verification, negotiation, and payment-safety toolkit for importing from China
+- **GitHub**: https://github.com/assassinationss/awesome-china-sourcing
+- **Topics**:
+  - Supplier verification (six-step VERIFY system)
+  - Landed cost calculation
+  - CNY / Golden Week order deadline planning
+  - Negotiation and quality-inspection templates
+- **Technologies**: Markdown guides, client-side JavaScript tools
+
 ## Demand Forecasting
 
 ### Time Series Forecasting Examples
