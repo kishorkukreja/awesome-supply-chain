@@ -508,6 +508,14 @@ print(f'Total orders processed: {warehouse.orders_processed}')
   - Dimensional-weight, carton-fit, parcel/freight routing, and warehouse slotting benchmark pages
   - 1,000 exact-spec product records with 24 page types per SKU
 
+**EDGAR Supply Chain**:
+- **GitHub**: https://github.com/GerritPro/edgar-supply-chain
+- **Data**: https://github.com/GerritPro/edgar-supply-chain/tree/main/data
+- **Focus**:
+  - Major customers that 3,049 US-listed companies disclose in their latest 10-K, 20-F or 40-F (the ASC 280 10% customer rule), with the share of revenue and a link to the filing
+  - 1,767 customer and supplier concentration rows plus a 322-edge supplier-customer graph between listed companies (CSV and JSON, CC BY 4.0)
+  - MIT-licensed Python extractor that reads XBRL tags, tables and filing text from SEC EDGAR
+
 ### GitHub Project Collections
 
 **Awesome Lists**:
