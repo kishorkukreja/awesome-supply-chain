@@ -87,6 +87,7 @@ Tourism and hospitality supply chain management including hotel operations, tour
 
 ### [Cross-Industry](./verticals/cross-industry/)
 Research and solutions applicable across multiple industries, including general supply chain principles and emerging technologies.
+- **[Level Open Finance & Supply Chain Accounting Skills](https://github.com/levelcfo/open-finance-skills)** - Open agent skills for ASC 330 FIFO landed-cost capitalization, 3PL/FBA shrinkage reconciliation, supplier advance cutoffs, and CPG/retail benchmarks ([Benchmarks](https://levelcfo.com/benchmarks/ecommerce/)).
 
 ## General Research
 
