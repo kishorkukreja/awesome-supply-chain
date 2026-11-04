@@ -508,6 +508,15 @@ print(f'Total orders processed: {warehouse.orders_processed}')
   - Dimensional-weight, carton-fit, parcel/freight routing, and warehouse slotting benchmark pages
   - 1,000 exact-spec product records with 24 page types per SKU
 
+**VetWarehouses Public Facility Directory**:
+- **Website**: https://vetwarehouses.com/directory
+- **Methodology**: https://vetwarehouses.com/methodology
+- **Access**: Free to browse without an account (web directory, not an open-source repository)
+- **Focus**:
+  - 10,000+ U.S. warehouse, distribution and cold-storage facility profiles organized by state and city
+  - Public records compiled with source, retrieval date and geography (regulatory history, flood and wildfire context, NOAA climate normals, FEMA disaster declarations, road/rail/port/airport access)
+  - Missing data shown as unknown rather than as absent risk; useful for facility location, 3PL due diligence and network resilience research
+
 ### GitHub Project Collections
 
 **Awesome Lists**:
