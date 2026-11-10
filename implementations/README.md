@@ -63,6 +63,17 @@ Curated collection of open-source implementations, GitHub repositories, and prac
   - Negotiation and quality-inspection templates
 - **Technologies**: Markdown guides, client-side JavaScript tools
 
+### PlushSource (quickman924)
+
+**Description**: Open directory and MCP server for searching custom plush manufacturers by country, with MOQ, lead times, OEM/ODM options, and certifications
+- **GitHub**: https://github.com/quickman924/plushsource-mcp
+- **Topics**:
+  - Custom plush manufacturer directory
+  - MOQ, lead times, and certifications
+  - MCP search of a public factory list
+- **Technologies**: TypeScript, MCP (stdio), npm (`plushsource-mcp`)
+- **Hosted**: https://plushsource.com
+
 ## Demand Forecasting
 
 ### Time Series Forecasting Examples
