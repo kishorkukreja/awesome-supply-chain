@@ -63,6 +63,17 @@ Curated collection of open-source implementations, GitHub repositories, and prac
   - Negotiation and quality-inspection templates
 - **Technologies**: Markdown guides, client-side JavaScript tools
 
+### ansi-x12-edi-sample-files (laozhang713)
+
+**Description**: Retail and supply chain ANSI X12 EDI sample files (850, 855, 856, 810, 820, 824, 846, 997) modeled on Walmart, Target, Amazon Vendor, Home Depot, Costco and Kroger trading partner requirements, with segment-by-segment annotations. Useful as test fixtures for EDI parsers and for learning purchase order, ship notice and invoice flows.
+- **GitHub**: https://github.com/laozhang713/ansi-x12-edi-sample-files
+- **Topics**:
+  - EDI purchase orders, ship notices and invoices
+  - Retailer compliance test data
+  - GS1-128 / SSCC-18 shipping labels
+- **Technologies**: ANSI X12 (plain text)
+- **Hosted**: https://ediparse.com/tools/edi-viewer-inspector (browser-based X12 viewer; files are parsed locally)
+
 ## Demand Forecasting
 
 ### Time Series Forecasting Examples
