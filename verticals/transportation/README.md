@@ -317,6 +317,7 @@ Transportation and logistics are the backbone of supply chain management, encomp
 - **Verizon Connect**: Telematics and routing
 - **Samsara**: Fleet operations platform
 - **Geotab**: Fleet intelligence platform
+- **Kardinal**: Route optimization for complex constraints
 
 #### Transportation Management Systems (TMS)
 - **Oracle Transportation Management**
