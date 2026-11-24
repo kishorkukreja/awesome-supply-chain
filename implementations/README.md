@@ -63,6 +63,18 @@ Curated collection of open-source implementations, GitHub repositories, and prac
   - Negotiation and quality-inspection templates
 - **Technologies**: Markdown guides, client-side JavaScript tools
 
+### Karvon (Khan-ipak)
+
+**Description**: Open-source terminal operating system for land freight terminals: dry ports, border truck terminals, TIR parks and cross-dock warehouses. Models a truck visit from gate-in to gate-out: yard slots, truck-to-truck transfer and warehouse operations, stock per cargo owner, customs clearance, weighbridge tickets and billing; a truck can't leave until its work is done, cleared and paid. Roles with an audit log, reports (throughput, dwell time, revenue), REST API. UI in English, Russian and Uzbek. MIT.
+- **GitHub**: https://github.com/Khan-ipak/karvon
+- **Topics**:
+  - Truck terminal and dry port operations
+  - Yard management
+  - Cross-docking and warehouse stock
+  - Customs and weighbridge
+- **Technologies**: Python, FastAPI, SQLAlchemy, Alembic, PostgreSQL/SQLite, Docker
+- **Demo**: https://karvon-demo.onrender.com (log in as `admin` / `admin`)
+
 ## Demand Forecasting
 
 ### Time Series Forecasting Examples
